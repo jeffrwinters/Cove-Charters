@@ -61,118 +61,28 @@
       position: relative;
       z-index: 2;
     }
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      font-weight: 900;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-    }
-    .brand-mark {
-      width: 44px;
-      height: 44px;
-      border: 1px solid rgba(255,255,255,.45);
-      border-radius: 50%;
-      display: grid;
-      place-items: center;
-      background: rgba(255,255,255,.1);
-      backdrop-filter: blur(14px);
-    }
+    .brand { display: flex; align-items: center; gap: 12px; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; }
+    .brand-mark { width: 44px; height: 44px; border: 1px solid rgba(255,255,255,.45); border-radius: 50%; display: grid; place-items: center; background: rgba(255,255,255,.1); backdrop-filter: blur(14px); }
     nav { display: flex; align-items: center; gap: 24px; font-size: 14px; font-weight: 800; }
     .nav-link { opacity: .86; }
     .nav-link:hover { opacity: 1; }
 
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 46px;
-      padding: 0 20px;
-      border-radius: 999px;
-      border: 1px solid transparent;
-      background: var(--sand);
-      color: #10212b;
-      font-weight: 900;
-      box-shadow: 0 12px 30px rgba(0,0,0,.16);
-      transition: transform .2s ease, box-shadow .2s ease;
-    }
+    .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 46px; padding: 0 20px; border-radius: 999px; border: 1px solid transparent; background: var(--sand); color: #10212b; font-weight: 900; box-shadow: 0 12px 30px rgba(0,0,0,.16); transition: transform .2s ease, box-shadow .2s ease; cursor: pointer; }
     .btn:hover { transform: translateY(-2px); box-shadow: 0 16px 38px rgba(0,0,0,.24); }
     .btn.secondary { background: rgba(255,255,255,.1); border-color: rgba(255,255,255,.26); color: white; box-shadow: none; }
 
-    .hero-content {
-      width: min(1180px, calc(100% - 36px));
-      margin: 0 auto;
-      padding: 88px 0 170px;
-      display: grid;
-      grid-template-columns: minmax(0, 1.15fr) minmax(320px, .85fr);
-      gap: 54px;
-      align-items: center;
-      position: relative;
-      z-index: 2;
-    }
-    .eyebrow {
-      display: inline-flex;
-      gap: 10px;
-      align-items: center;
-      padding: 8px 13px;
-      border: 1px solid rgba(255,255,255,.22);
-      border-radius: 999px;
-      background: rgba(255,255,255,.09);
-      font-weight: 900;
-      font-size: 12px;
-      letter-spacing: .1em;
-      text-transform: uppercase;
-      color: #dff7fb;
-    }
-    h1 {
-      font-size: clamp(48px, 8vw, 92px);
-      line-height: .88;
-      letter-spacing: -.07em;
-      margin: 24px 0;
-      max-width: 820px;
-      font-weight: 900;
-    }
-    .hero p {
-      color: rgba(255,255,255,.84);
-      font-size: clamp(17px, 2vw, 21px);
-      line-height: 1.7;
-      max-width: 660px;
-      margin: 0 0 30px;
-    }
+    .hero-content { width: min(1180px, calc(100% - 36px)); margin: 0 auto; padding: 88px 0 170px; display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(320px, .85fr); gap: 54px; align-items: center; position: relative; z-index: 2; }
+    .eyebrow { display: inline-flex; gap: 10px; align-items: center; padding: 8px 13px; border: 1px solid rgba(255,255,255,.22); border-radius: 999px; background: rgba(255,255,255,.09); font-weight: 900; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: #dff7fb; }
+    h1 { font-size: clamp(48px, 8vw, 92px); line-height: .88; letter-spacing: -.07em; margin: 24px 0; max-width: 820px; font-weight: 900; }
+    .hero p { color: rgba(255,255,255,.84); font-size: clamp(17px, 2vw, 21px); line-height: 1.7; max-width: 660px; margin: 0 0 30px; }
     .hero-actions { display: flex; flex-wrap: wrap; gap: 14px; }
 
-    .command-card {
-      background: rgba(255,255,255,.12);
-      border: 1px solid rgba(255,255,255,.23);
-      border-radius: 32px;
-      padding: 22px;
-      backdrop-filter: blur(18px);
-      box-shadow: var(--shadow);
-    }
+    .command-card { background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.23); border-radius: 32px; padding: 22px; backdrop-filter: blur(18px); box-shadow: var(--shadow); }
     .command-card h2 { margin: 0 0 10px; font-size: 18px; }
     .command-card p { font-size: 14px; line-height: 1.55; margin-bottom: 18px; }
     .workflow { display: grid; gap: 12px; }
-    .workflow-step {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 14px;
-      border-radius: 18px;
-      background: rgba(255,255,255,.12);
-      border: 1px solid rgba(255,255,255,.14);
-    }
-    .step-number {
-      width: 34px;
-      height: 34px;
-      border-radius: 50%;
-      display: grid;
-      place-items: center;
-      background: var(--sand);
-      color: var(--navy);
-      font-weight: 900;
-      flex: 0 0 auto;
-    }
+    .workflow-step { display: flex; align-items: center; gap: 12px; padding: 14px; border-radius: 18px; background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.14); }
+    .step-number { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--sand); color: var(--navy); font-weight: 900; flex: 0 0 auto; }
     .workflow-step strong { display: block; font-size: 14px; }
     .workflow-step span { display: block; color: rgba(255,255,255,.72); font-size: 12px; margin-top: 3px; }
 
@@ -180,70 +90,15 @@
     .section { width: min(1180px, calc(100% - 36px)); margin: 0 auto; padding: 76px 0; }
     .section-header { display: flex; justify-content: space-between; align-items: end; gap: 24px; margin-bottom: 30px; }
     .section-kicker { color: var(--water); font-weight: 900; letter-spacing: .11em; text-transform: uppercase; font-size: 12px; margin-bottom: 10px; }
-    h2.section-title {
-      font-size: clamp(34px, 5vw, 58px);
-      line-height: .95;
-      letter-spacing: -.055em;
-      margin: 0;
-      color: var(--navy);
-      font-weight: 900;
-    }
+    h2.section-title { font-size: clamp(34px, 5vw, 58px); line-height: .95; letter-spacing: -.055em; margin: 0; color: var(--navy); font-weight: 900; }
     .section-header p { color: var(--muted); line-height: 1.65; max-width: 430px; margin: 0; }
 
     .boat-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; }
-    .boat-card {
-      background: white;
-      border-radius: var(--radius);
-      overflow: hidden;
-      box-shadow: 0 18px 48px rgba(7,25,35,.12);
-      border: 1px solid rgba(16,33,43,.08);
-      display: flex;
-      flex-direction: column;
-      min-height: 100%;
-    }
-    .boat-art {
-      min-height: 220px;
-      background:
-        linear-gradient(135deg, rgba(7,25,35,.2), rgba(7,25,35,.05)),
-        linear-gradient(135deg, #0c3950, #1496b6 52%, #f2dfbd);
-      position: relative;
-      display: flex;
-      align-items: end;
-      padding: 18px;
-      color: white;
-      overflow: hidden;
-    }
-    .boat-art::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      background: var(--boat-image, none) center/cover;
-      opacity: var(--boat-image-opacity, 0);
-      transform: scale(1.03);
-    }
-    .boat-art::after {
-      content: "";
-      position: absolute;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      height: 55%;
-      background: linear-gradient(180deg, transparent, rgba(7,25,35,.72));
-    }
-    .featured-badge {
-      position: absolute;
-      top: 16px;
-      left: 16px;
-      padding: 7px 11px;
-      border-radius: 999px;
-      background: rgba(242,223,189,.94);
-      color: var(--navy);
-      font-size: 11px;
-      font-weight: 900;
-      text-transform: uppercase;
-      letter-spacing: .08em;
-      z-index: 1;
-    }
+    .boat-card { background: white; border-radius: var(--radius); overflow: hidden; box-shadow: 0 18px 48px rgba(7,25,35,.12); border: 1px solid rgba(16,33,43,.08); display: flex; flex-direction: column; min-height: 100%; }
+    .boat-art { min-height: 220px; background: linear-gradient(135deg, rgba(7,25,35,.2), rgba(7,25,35,.05)), linear-gradient(135deg, #0c3950, #1496b6 52%, #f2dfbd); position: relative; display: flex; align-items: end; padding: 18px; color: white; overflow: hidden; }
+    .boat-art::before { content: ""; position: absolute; inset: 0; background: var(--boat-image, none) center/cover; opacity: var(--boat-image-opacity, 0); transform: scale(1.03); }
+    .boat-art::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 55%; background: linear-gradient(180deg, transparent, rgba(7,25,35,.72)); }
+    .featured-badge { position: absolute; top: 16px; left: 16px; padding: 7px 11px; border-radius: 999px; background: rgba(242,223,189,.94); color: var(--navy); font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; z-index: 1; }
     .boat-length { position: relative; z-index: 1; font-size: 50px; font-weight: 900; letter-spacing: -.08em; line-height: .8; }
     .boat-body { padding: 22px; display: flex; flex-direction: column; flex: 1; }
     .price { color: var(--water); font-weight: 900; margin-bottom: 10px; }
@@ -256,31 +111,47 @@
     .card-actions .btn.dark { background: var(--navy); color: white; }
     .card-actions .btn.light { background: #f1f5f6; color: var(--navy); }
 
-    .process {
-      background: var(--navy);
-      color: white;
-      border-radius: 36px;
-      padding: 38px;
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 18px;
-      box-shadow: var(--shadow);
-    }
+    .concierge-shell { display: grid; grid-template-columns: .9fr 1.1fr; gap: 28px; align-items: stretch; }
+    .concierge-intro { background: var(--navy); color: white; border-radius: 36px; padding: 34px; box-shadow: var(--shadow); display: flex; flex-direction: column; justify-content: space-between; min-height: 540px; }
+    .concierge-intro h2 { font-size: clamp(36px, 5vw, 62px); line-height: .92; letter-spacing: -.06em; margin: 0 0 18px; }
+    .concierge-intro p { color: rgba(255,255,255,.76); line-height: 1.7; margin: 0 0 18px; }
+    .concierge-points { display: grid; gap: 12px; margin-top: 28px; }
+    .concierge-point { display: flex; gap: 12px; align-items: flex-start; padding: 14px; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.08); border-radius: 18px; }
+    .concierge-point strong { display: block; font-size: 14px; }
+    .concierge-point span { display: block; color: rgba(255,255,255,.68); font-size: 13px; line-height: 1.45; margin-top: 3px; }
+
+    .chat-card { background: white; border-radius: 36px; box-shadow: 0 18px 48px rgba(7,25,35,.11); border: 1px solid rgba(16,33,43,.08); overflow: hidden; display: flex; flex-direction: column; min-height: 540px; }
+    .chat-header { padding: 20px 22px; background: #f5fafb; border-bottom: 1px solid rgba(16,33,43,.08); display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+    .chat-agent { display: flex; gap: 12px; align-items: center; }
+    .avatar { width: 44px; height: 44px; border-radius: 50%; background: var(--water); color: white; display: grid; place-items: center; font-weight: 900; }
+    .chat-agent strong { display: block; color: var(--navy); }
+    .chat-agent span { display: block; color: var(--muted); font-size: 13px; margin-top: 2px; }
+    .chat-status { color: var(--water); font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; }
+    .chat-window { padding: 22px; display: grid; gap: 14px; flex: 1; align-content: start; background: linear-gradient(180deg, #fff, #f7fbfc); }
+    .bubble { max-width: 86%; padding: 14px 16px; border-radius: 20px; line-height: 1.5; font-size: 14px; }
+    .bubble.agent { background: #edf6f8; color: var(--ink); border-top-left-radius: 6px; }
+    .bubble.user { justify-self: end; background: var(--navy); color: white; border-top-right-radius: 6px; }
+    .quick-options { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chip { border: 1px solid #d7e5ea; background: white; color: var(--navy); padding: 9px 12px; border-radius: 999px; font-weight: 800; font-size: 13px; cursor: pointer; transition: .2s ease; }
+    .chip:hover, .chip.active { background: var(--sand); border-color: var(--sand); transform: translateY(-1px); }
+    .chat-footer { padding: 16px 22px 22px; border-top: 1px solid rgba(16,33,43,.08); background: white; display: grid; gap: 12px; }
+    .match-card { display: none; border: 1px solid rgba(15,111,143,.18); background: #f3fbfc; border-radius: 22px; padding: 16px; }
+    .match-card.show { display: block; }
+    .match-kicker { color: var(--water); font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 8px; }
+    .match-card h3 { margin: 0 0 8px; color: var(--navy); font-size: 22px; letter-spacing: -.035em; }
+    .match-card p { margin: 0 0 12px; color: var(--muted); line-height: 1.55; }
+    .match-meta { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+    .match-meta span { padding: 7px 10px; border-radius: 999px; background: white; color: #48606d; font-size: 12px; font-weight: 900; }
+    .next-step-row { display: flex; flex-wrap: wrap; gap: 10px; }
+    .small-link { font-weight: 900; color: var(--water); display: inline-flex; align-items: center; }
+
+    .process { background: var(--navy); color: white; border-radius: 36px; padding: 38px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; box-shadow: var(--shadow); }
     .process-step { padding: 20px; border-radius: 24px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.12); }
     .process-step .num { color: var(--sand); font-weight: 900; margin-bottom: 14px; }
     .process-step h3 { margin: 0 0 8px; letter-spacing: -.025em; }
     .process-step p { margin: 0; color: rgba(255,255,255,.72); line-height: 1.55; font-size: 14px; }
 
-    .demo-panel {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 24px;
-      align-items: center;
-      background: white;
-      border-radius: 36px;
-      padding: 38px;
-      box-shadow: 0 18px 48px rgba(7,25,35,.11);
-    }
+    .demo-panel { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: center; background: white; border-radius: 36px; padding: 38px; box-shadow: 0 18px 48px rgba(7,25,35,.11); }
     .demo-panel h2 { font-size: clamp(32px, 4vw, 52px); line-height: .98; letter-spacing: -.055em; margin: 0 0 16px; color: var(--navy); font-weight: 900; }
     .demo-panel p { color: var(--muted); line-height: 1.65; }
     .operator-list { display: grid; gap: 12px; padding: 0; margin: 0; list-style: none; }
@@ -294,6 +165,8 @@
       nav .nav-link { display: none; }
       .hero-content { grid-template-columns: 1fr; padding-top: 46px; }
       .boat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .concierge-shell { grid-template-columns: 1fr; }
+      .concierge-intro { min-height: auto; }
       .process { grid-template-columns: repeat(2, 1fr); }
       .demo-panel { grid-template-columns: 1fr; }
       .section-header { display: block; }
@@ -305,6 +178,8 @@
       .hero-content { padding-bottom: 120px; }
       .hero-actions .btn { width: 100%; }
       .boat-grid { grid-template-columns: 1fr; }
+      .chat-header { align-items: flex-start; flex-direction: column; }
+      .bubble { max-width: 100%; }
       .process { grid-template-columns: 1fr; padding: 20px; }
       .demo-panel { padding: 24px; }
       .footer-inner { display: block; }
@@ -317,9 +192,10 @@
       <a class="brand" href="#top" aria-label="Cove Charters home"><span class="brand-mark">C</span><span>Cove Charters</span></a>
       <nav>
         <a class="nav-link" href="#boats">Boats</a>
+        <a class="nav-link" href="#concierge">Concierge</a>
         <a class="nav-link" href="#process">How It Works</a>
         <a class="nav-link" href="#command-center">Command Center</a>
-        <a class="btn" href="https://covecharters.com/" target="_blank" rel="noopener">Book Now</a>
+        <a class="btn" href="#concierge">Find My Boat</a>
       </nav>
     </header>
 
@@ -328,13 +204,13 @@
         <span class="eyebrow">Lake of the Ozarks • Luxury Charters</span>
         <h1>Upscale boat days, handled beautifully.</h1>
         <p>Cove Charters helps guests browse premium Lake of the Ozarks boats, choose the right captain, and reserve a polished day on the water without the operational mess behind the scenes.</p>
-        <div class="hero-actions"><a class="btn" href="#boats">Explore the Fleet</a><a class="btn secondary" href="#command-center">View Demo Concept</a></div>
+        <div class="hero-actions"><a class="btn" href="#concierge">Start with Cove Concierge</a><a class="btn secondary" href="#boats">Explore the Fleet</a></div>
       </div>
       <aside class="command-card" aria-label="Cove workflow preview">
         <h2>Customer-friendly. Operator-ready.</h2>
         <p>This first demo focuses on traction: a clean public website with real boats today, and a clear path toward owner calendars, captain acceptance, charter agreements, and back-office control.</p>
         <div class="workflow">
-          <div class="workflow-step"><span class="step-number">1</span><div><strong>Select a boat</strong><span>Browse upscale inventory by group size and style.</span></div></div>
+          <div class="workflow-step"><span class="step-number">1</span><div><strong>Chat with concierge</strong><span>Match the trip to the right boat experience.</span></div></div>
           <div class="workflow-step"><span class="step-number">2</span><div><strong>Choose a captain</strong><span>Customer selects from approved captains.</span></div></div>
           <div class="workflow-step"><span class="step-number">3</span><div><strong>Confirm the charter</strong><span>Calendar, acceptance, agreement, and payment workflow.</span></div></div>
         </div>
@@ -343,25 +219,159 @@
   </section>
 
   <main>
+    <section class="section" id="concierge">
+      <div class="concierge-shell">
+        <div class="concierge-intro">
+          <div>
+            <div class="section-kicker" style="color: var(--sand);">Booking Prototype</div>
+            <h2>Cove Concierge matches the charterer to the perfect boat.</h2>
+            <p>Instead of forcing guests to compare specs, Cove can ask a few natural questions and turn their answers into a recommended boat, captain-selection step, and booking path.</p>
+          </div>
+          <div class="concierge-points">
+            <div class="concierge-point"><span class="step-number">1</span><div><strong>Understand the occasion</strong><span>Bachelorette, family day, client outing, cove hopping, dinner cruise, or premium party day.</span></div></div>
+            <div class="concierge-point"><span class="step-number">2</span><div><strong>Match against constraints</strong><span>Group size, budget, comfort needs, bathrooms, bedrooms, and desired vibe.</span></div></div>
+            <div class="concierge-point"><span class="step-number">3</span><div><strong>Move into compliance</strong><span>After the boat match, the workflow can guide captain selection and bareboat documents.</span></div></div>
+          </div>
+        </div>
+
+        <div class="chat-card" aria-label="Cove Concierge prototype">
+          <div class="chat-header">
+            <div class="chat-agent"><div class="avatar">CC</div><div><strong>Cove Concierge</strong><span>Boat matching assistant</span></div></div>
+            <div class="chat-status">Prototype</div>
+          </div>
+          <div class="chat-window" id="chatWindow">
+            <div class="bubble agent">Hi, I’m Cove Concierge. I’ll help match you to the best boat for your day on Lake of the Ozarks.</div>
+            <div class="bubble agent">First, what kind of trip are you planning?</div>
+            <div class="quick-options" data-question="occasion">
+              <button class="chip" data-value="party">Party / Cove Day</button>
+              <button class="chip" data-value="family">Family Day</button>
+              <button class="chip" data-value="premium">Premium Yacht Feel</button>
+              <button class="chip" data-value="small">Small Group Cruise</button>
+            </div>
+            <div class="bubble agent">How many guests are coming?</div>
+            <div class="quick-options" data-question="guests">
+              <button class="chip" data-value="6">Up to 6</button>
+              <button class="chip" data-value="13">7 to 13</button>
+            </div>
+            <div class="bubble agent">What matters most?</div>
+            <div class="quick-options" data-question="priority">
+              <button class="chip" data-value="space">Maximum Space</button>
+              <button class="chip" data-value="value">Best Value</button>
+              <button class="chip" data-value="comfort">A/C + Cabin Comfort</button>
+              <button class="chip" data-value="sport">Sporty + Nimble</button>
+            </div>
+          </div>
+          <div class="chat-footer">
+            <div class="match-card" id="matchCard">
+              <div class="match-kicker">Recommended Match</div>
+              <h3 id="matchTitle">Brima 400 SLX SeaRay</h3>
+              <p id="matchReason">Great fit for larger groups that want a premium social layout, room to spread out, and an upscale Lake of the Ozarks charter feel.</p>
+              <div class="match-meta" id="matchMeta"><span>13 Guests</span><span>40'</span><span>From $1,400</span></div>
+              <div class="next-step-row"><a class="btn" id="matchLink" href="https://covecharters.com/listing/brima/" target="_blank" rel="noopener">View Matched Boat</a><a class="small-link" href="#process">See next booking steps →</a></div>
+            </div>
+            <button class="btn" id="matchButton" type="button">Find my boat</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section class="section" id="boats">
       <div class="section-header">
         <div><div class="section-kicker">Current Cove Inventory</div><h2 class="section-title">Featured charter boats</h2></div>
         <p>These demo cards are populated from the current Cove Charters public listings and give us an immediate, polished fleet view for partner conversations.</p>
       </div>
       <div class="boat-grid">
-        <article class="boat-card"><div class="boat-art"><span class="boat-length">40'</span></div><div class="boat-body"><div class="price">From $1,300 / 4 hour</div><h3>Our Time 400 Express Sea Ray</h3><ul class="specs"><li>13 Guests</li><li>2 Bedrooms</li><li>2 Baths</li></ul><p>A spacious Sea Ray express cruiser positioned for comfortable, premium days with family, friends, and clients.</p><div class="card-actions"><a class="btn dark" href="https://covecharters.com/listing/our-time-400-express-sea-ray/" target="_blank" rel="noopener">View Listing</a><a class="btn light" href="#command-center">Demo Flow</a></div></div></article>
-        <article class="boat-card"><div class="boat-art"><span class="boat-length">45'</span></div><div class="boat-body"><div class="price">From $1,300 / 4 hour</div><h3>Izzzyokayyy 450 Sundancer Sea Ray</h3><ul class="specs"><li>13 Guests</li><li>2 Bedrooms</li><li>2 Baths</li></ul><p>Comfort, style, A/C, indoor lounging, open-air deck space, premium sound, and water toys for a full lake day.</p><div class="card-actions"><a class="btn dark" href="https://covecharters.com/listing/izzzyokayyy-450-sundancer-sea-ray/" target="_blank" rel="noopener">View Listing</a><a class="btn light" href="#command-center">Demo Flow</a></div></div></article>
-        <article class="boat-card"><div class="boat-art"><span class="boat-length">31'</span></div><div class="boat-body"><div class="price">From $1,000 / 4 hour</div><h3>S.U.S.F.U. 310 SLX Sea Ray</h3><ul class="specs"><li>6 Guests</li><li>1 Bath</li><li>Sport Luxury</li></ul><p>A smaller luxury runabout option for guests who want a nimble, premium lake experience.</p><div class="card-actions"><a class="btn dark" href="https://covecharters.com/listing/s-u-s-f-u-310-slx-sea-ray/" target="_blank" rel="noopener">View Listing</a><a class="btn light" href="#command-center">Demo Flow</a></div></div></article>
-        <article class="boat-card"><div class="boat-art"><span class="boat-length">35'</span></div><div class="boat-body"><div class="price">From $1,000 / 4 hour</div><h3>If You Got A Chance Take It 350 SLX Sea Ray</h3><ul class="specs"><li>6 Guests</li><li>1 Bedroom</li><li>1 Bath</li></ul><p>A premium Sea Ray SLX option for smaller groups that still want a high-end charter feel.</p><div class="card-actions"><a class="btn dark" href="https://covecharters.com/listing/if-you-got-a-chance-take-it-350-slx-sea-ray/" target="_blank" rel="noopener">View Listing</a><a class="btn light" href="#command-center">Demo Flow</a></div></div></article>
-        <article class="boat-card"><div class="boat-art"><span class="featured-badge">Featured</span><span class="boat-length">40'</span></div><div class="boat-body"><div class="price">From $1,400 / 4 hour</div><h3>Brima 400 SLX SeaRay</h3><ul class="specs"><li>13 Guests</li><li>1 Bedroom</li><li>1 Bath</li></ul><p>A featured Cove boat designed for larger groups that want room, comfort, and a premium social layout.</p><div class="card-actions"><a class="btn dark" href="https://covecharters.com/listing/brima/" target="_blank" rel="noopener">View Listing</a><a class="btn light" href="#command-center">Demo Flow</a></div></div></article>
-        <article class="boat-card"><div class="boat-art"><span class="featured-badge">Featured</span><span class="boat-length">45'</span></div><div class="boat-body"><div class="price">From $1,300 / 4 hour</div><h3>Hose Monkey 450 Sundancer Sea Ray</h3><ul class="specs"><li>13 Guests</li><li>2 Bedrooms</li><li>2 Baths</li></ul><p>A featured 45-foot Sundancer for guests looking for yacht-style comfort and a full-day destination charter.</p><div class="card-actions"><a class="btn dark" href="https://covecharters.com/listing/hose-monkey/" target="_blank" rel="noopener">View Listing</a><a class="btn light" href="#command-center">Demo Flow</a></div></div></article>
+        <article class="boat-card"><div class="boat-art"><span class="boat-length">40'</span></div><div class="boat-body"><div class="price">From $1,300 / 4 hour</div><h3>Our Time 400 Express Sea Ray</h3><ul class="specs"><li>13 Guests</li><li>2 Bedrooms</li><li>2 Baths</li></ul><p>A spacious Sea Ray express cruiser positioned for comfortable, premium days with family, friends, and clients.</p><div class="card-actions"><a class="btn dark" href="https://covecharters.com/listing/our-time-400-express-sea-ray/" target="_blank" rel="noopener">View Listing</a><a class="btn light" href="#concierge">Match Me</a></div></div></article>
+        <article class="boat-card"><div class="boat-art"><span class="boat-length">45'</span></div><div class="boat-body"><div class="price">From $1,300 / 4 hour</div><h3>Izzzyokayyy 450 Sundancer Sea Ray</h3><ul class="specs"><li>13 Guests</li><li>2 Bedrooms</li><li>2 Baths</li></ul><p>Comfort, style, A/C, indoor lounging, open-air deck space, premium sound, and water toys for a full lake day.</p><div class="card-actions"><a class="btn dark" href="https://covecharters.com/listing/izzzyokayyy-450-sundancer-sea-ray/" target="_blank" rel="noopener">View Listing</a><a class="btn light" href="#concierge">Match Me</a></div></div></article>
+        <article class="boat-card"><div class="boat-art"><span class="boat-length">31'</span></div><div class="boat-body"><div class="price">From $1,000 / 4 hour</div><h3>S.U.S.F.U. 310 SLX Sea Ray</h3><ul class="specs"><li>6 Guests</li><li>1 Bath</li><li>Sport Luxury</li></ul><p>A smaller luxury runabout option for guests who want a nimble, premium lake experience.</p><div class="card-actions"><a class="btn dark" href="https://covecharters.com/listing/s-u-s-f-u-310-slx-sea-ray/" target="_blank" rel="noopener">View Listing</a><a class="btn light" href="#concierge">Match Me</a></div></div></article>
+        <article class="boat-card"><div class="boat-art"><span class="boat-length">35'</span></div><div class="boat-body"><div class="price">From $1,000 / 4 hour</div><h3>If You Got A Chance Take It 350 SLX Sea Ray</h3><ul class="specs"><li>6 Guests</li><li>1 Bedroom</li><li>1 Bath</li></ul><p>A premium Sea Ray SLX option for smaller groups that still want a high-end charter feel.</p><div class="card-actions"><a class="btn dark" href="https://covecharters.com/listing/if-you-got-a-chance-take-it-350-slx-sea-ray/" target="_blank" rel="noopener">View Listing</a><a class="btn light" href="#concierge">Match Me</a></div></div></article>
+        <article class="boat-card"><div class="boat-art"><span class="featured-badge">Featured</span><span class="boat-length">40'</span></div><div class="boat-body"><div class="price">From $1,400 / 4 hour</div><h3>Brima 400 SLX SeaRay</h3><ul class="specs"><li>13 Guests</li><li>1 Bedroom</li><li>1 Bath</li></ul><p>A featured Cove boat designed for larger groups that want room, comfort, and a premium social layout.</p><div class="card-actions"><a class="btn dark" href="https://covecharters.com/listing/brima/" target="_blank" rel="noopener">View Listing</a><a class="btn light" href="#concierge">Match Me</a></div></div></article>
+        <article class="boat-card"><div class="boat-art"><span class="featured-badge">Featured</span><span class="boat-length">45'</span></div><div class="boat-body"><div class="price">From $1,300 / 4 hour</div><h3>Hose Monkey 450 Sundancer Sea Ray</h3><ul class="specs"><li>13 Guests</li><li>2 Bedrooms</li><li>2 Baths</li></ul><p>A featured 45-foot Sundancer for guests looking for yacht-style comfort and a full-day destination charter.</p><div class="card-actions"><a class="btn dark" href="https://covecharters.com/listing/hose-monkey/" target="_blank" rel="noopener">View Listing</a><a class="btn light" href="#concierge">Match Me</a></div></div></article>
       </div>
     </section>
 
-    <section class="section" id="process"><div class="process"><div class="process-step"><div class="num">01</div><h3>Select your boat</h3><p>Guests start with a premium inventory experience instead of a generic rental catalog.</p></div><div class="process-step"><div class="num">02</div><h3>Choose your captain</h3><p>The bareboat workflow is designed around customer-selected captains from approved lists.</p></div><div class="process-step"><div class="num">03</div><h3>Sign agreements</h3><p>Charter documents can become a guided part of the booking flow rather than a manual follow-up.</p></div><div class="process-step"><div class="num">04</div><h3>Enjoy the lake</h3><p>The operations layer keeps owners, captains, customers, and back office aligned.</p></div></div></section>
+    <section class="section" id="process"><div class="process"><div class="process-step"><div class="num">01</div><h3>Chat with concierge</h3><p>Guests answer a few natural questions so Cove can recommend the best-fit boat.</p></div><div class="process-step"><div class="num">02</div><h3>Choose your captain</h3><p>The bareboat workflow is designed around customer-selected captains from approved lists.</p></div><div class="process-step"><div class="num">03</div><h3>Sign agreements</h3><p>Charter documents can become a guided part of the booking flow rather than a manual follow-up.</p></div><div class="process-step"><div class="num">04</div><h3>Confirm and go</h3><p>The operations layer keeps owners, captains, customers, and back office aligned.</p></div></div></section>
 
     <section class="section" id="command-center"><div class="demo-panel"><div><div class="section-kicker">Coming Next</div><h2>Command Center preview</h2><p>The back office can start as a web-based control center while captains eventually get a mobile app for accepting trips, managing availability, and receiving push notifications.</p><a class="btn" href="mailto:info@covecharters.com?subject=Cove%20Charters%20Demo">Request Demo Access</a></div><ul class="operator-list" aria-label="Command Center demo statuses"><li><span>Owner calendars</span><span class="status">Planned</span></li><li><span>Captain availability</span><span class="status">Planned</span></li><li><span>Captain acceptance</span><span class="status">Planned</span></li><li><span>Charter agreements</span><span class="status">Planned</span></li><li><span>Back-office reassignment</span><span class="status">Planned</span></li><li><span>Payout tracking</span><span class="status">Planned</span></li></ul></div></section>
   </main>
   <footer><div class="footer-inner"><strong>Cove Charters</strong><span>Demo MVP • Lake of the Ozarks luxury charter marketplace</span></div></footer>
+  <script>
+    const answers = {};
+    const boats = {
+      bigComfort: {
+        title: 'Izzzyokayyy 450 Sundancer Sea Ray',
+        reason: 'Best fit when guests want the larger yacht feel, A/C, indoor lounging, two bedrooms, two baths, and room for a premium full-lake day.',
+        meta: ['13 Guests', "45'", 'From $1,300'],
+        url: 'https://covecharters.com/listing/izzzyokayyy-450-sundancer-sea-ray/'
+      },
+      bigSocial: {
+        title: 'Brima 400 SLX SeaRay',
+        reason: 'Great fit for larger groups that want a premium social layout, room to spread out, and an upscale Lake of the Ozarks charter feel.',
+        meta: ['13 Guests', "40'", 'From $1,400'],
+        url: 'https://covecharters.com/listing/brima/'
+      },
+      bestValue: {
+        title: 'Our Time 400 Express Sea Ray',
+        reason: 'Strong match for groups up to 13 that want space, two bedrooms, two baths, and a lower starting price than the featured 40-foot option.',
+        meta: ['13 Guests', "40'", 'From $1,300'],
+        url: 'https://covecharters.com/listing/our-time-400-express-sea-ray/'
+      },
+      smallSport: {
+        title: 'S.U.S.F.U. 310 SLX Sea Ray',
+        reason: 'Best fit for smaller groups who want a sporty, nimble, premium boat day without paying for more boat than they need.',
+        meta: ['6 Guests', "31'", 'From $1,000'],
+        url: 'https://covecharters.com/listing/s-u-s-f-u-310-slx-sea-ray/'
+      },
+      smallPremium: {
+        title: 'If You Got A Chance Take It 350 SLX Sea Ray',
+        reason: 'Best fit for a smaller group that still wants more room, a bedroom, a bath, and a more elevated Sea Ray SLX experience.',
+        meta: ['6 Guests', "35'", 'From $1,000'],
+        url: 'https://covecharters.com/listing/if-you-got-a-chance-take-it-350-slx-sea-ray/'
+      }
+    };
+
+    function addUserBubble(text) {
+      const chatWindow = document.getElementById('chatWindow');
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble user';
+      bubble.textContent = text;
+      chatWindow.appendChild(bubble);
+    }
+
+    function chooseMatch() {
+      const guestCount = answers.guests;
+      const priority = answers.priority;
+      const occasion = answers.occasion;
+      if (guestCount === '6' && priority === 'sport') return boats.smallSport;
+      if (guestCount === '6') return boats.smallPremium;
+      if (priority === 'comfort' || occasion === 'premium') return boats.bigComfort;
+      if (priority === 'value') return boats.bestValue;
+      return boats.bigSocial;
+    }
+
+    function renderMatch() {
+      const selected = chooseMatch();
+      document.getElementById('matchTitle').textContent = selected.title;
+      document.getElementById('matchReason').textContent = selected.reason;
+      document.getElementById('matchMeta').innerHTML = selected.meta.map(item => `<span>${item}</span>`).join('');
+      document.getElementById('matchLink').href = selected.url;
+      document.getElementById('matchCard').classList.add('show');
+      document.getElementById('matchButton').textContent = 'Update my match';
+    }
+
+    document.querySelectorAll('.quick-options').forEach(group => {
+      group.addEventListener('click', event => {
+        const chip = event.target.closest('.chip');
+        if (!chip) return;
+        group.querySelectorAll('.chip').forEach(item => item.classList.remove('active'));
+        chip.classList.add('active');
+        answers[group.dataset.question] = chip.dataset.value;
+        addUserBubble(chip.textContent);
+        if (answers.occasion && answers.guests && answers.priority) renderMatch();
+      });
+    });
+
+    document.getElementById('matchButton').addEventListener('click', renderMatch);
+  </script>
 </body>
 </html>
