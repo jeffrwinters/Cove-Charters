@@ -1,0 +1,17 @@
+[
+  {
+    "id": "captain_placeholder_001",
+    "recordType": "captain",
+    "status": "draft",
+    "name": "Captain Placeholder",
+    "credential": "Credential TBD",
+    "email": "",
+    "phone": "",
+    "bio": "Placeholder captain record for Cove approved-captain workflows.",
+    "homePort": "Lake of the Ozarks, MO",
+    "media": {
+      "photos": []
+    },
+    "approvedBoatIds": []
+  }
+]
