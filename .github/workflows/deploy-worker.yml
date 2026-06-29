@@ -31,6 +31,9 @@ jobs:
 
       - name: Deploy Worker
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: wrangler deploy
+          CF_TOKEN_RAW: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT_RAW: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          export CLOUDFLARE_API_TOKEN="$(printf '%s' "$CF_TOKEN_RAW" | tr -d '\r\n ')"
+          export CLOUDFLARE_ACCOUNT_ID="$(printf '%s' "$CF_ACCOUNT_RAW" | tr -d '\r\n ')"
+          wrangler deploy
