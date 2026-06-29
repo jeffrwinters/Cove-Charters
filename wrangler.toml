@@ -1,0 +1,15 @@
+name = "cove-media-upload"
+main = "workers/media-upload-worker.js"
+compatibility_date = "2026-06-29"
+
+[vars]
+GITHUB_OWNER = "jeffrwinters"
+GITHUB_REPO = "Cove-Charters"
+GITHUB_BRANCH = "main"
+MAX_UPLOAD_BYTES = "15728640"
+
+# Required secret:
+# GITHUB_TOKEN
+#
+# Set with:
+# npx wrangler secret put GITHUB_TOKEN
