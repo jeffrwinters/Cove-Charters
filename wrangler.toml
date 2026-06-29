@@ -1,5 +1,5 @@
-name = "cove-media-upload"
-main = "workers/media-upload-worker.js"
+name = "cove-api"
+main = "workers/cove-api-worker.js"
 compatibility_date = "2026-06-29"
 
 [vars]
@@ -7,6 +7,7 @@ GITHUB_OWNER = "jeffrwinters"
 GITHUB_REPO = "Cove-Charters"
 GITHUB_BRANCH = "main"
 MAX_UPLOAD_BYTES = "15728640"
+ALLOWED_ORIGINS = "https://jeffrwinters.github.io,https://covecharters.com,https://www.covecharters.com"
 
 # Required secret:
 # GITHUB_TOKEN
