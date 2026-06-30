@@ -36,7 +36,8 @@ export default {
 async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
-  return json({ ok: true, service: 'cove-api', version: '0.3.16', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(env.EMAIL && env.BOOKING_NOTIFY_TO && env.BOOKING_NOTIFY_FROM), customerEmail: Boolean(env.EMAIL && env.BOOKING_NOTIFY_FROM) }, 200, cors);
+  const resendConfigured = Boolean(env.RESEND_API_KEY && env.BOOKING_NOTIFY_FROM);
+  return json({ ok: true, service: 'cove-api', version: '0.3.17', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
 }
 
 async function settings(request, env, cors) {
@@ -529,8 +530,8 @@ async function sendBookingConfirmation(request, env, cors, id) {
   if (!row) return json({ error: 'Booking not found' }, 404, cors);
   const booking = outBooking(row);
   if (!booking.email) return json({ error: 'Booking has no customer email address' }, 400, cors);
-  if (!env.EMAIL || !env.BOOKING_NOTIFY_FROM) {
-    return json({ ok: false, sent: false, configured: false, error: 'Customer email is not configured' }, 501, cors);
+  if (!env.RESEND_API_KEY || !env.BOOKING_NOTIFY_FROM) {
+    return json({ ok: false, sent: false, configured: false, provider: 'resend', error: 'Customer email is not configured' }, 501, cors);
   }
 
   const result = await sendCustomerConfirmation(env, booking);
@@ -596,7 +597,7 @@ function splitName(fullName, firstName, lastName) {
 }
 
 async function sendBookingNotification(env, booking) {
-  if (!env.EMAIL || !env.BOOKING_NOTIFY_TO || !env.BOOKING_NOTIFY_FROM) return null;
+  if (!env.RESEND_API_KEY || !env.BOOKING_NOTIFY_TO || !env.BOOKING_NOTIFY_FROM) return null;
   const adminUrl = env.ADMIN_URL || 'https://jeffrwinters.github.io/Cove-Charters/admin.html';
   const subject = `New Cove booking request: ${booking.boatName || booking.boatId}`;
   const lines = [
@@ -627,10 +628,9 @@ async function sendBookingNotification(env, booking) {
     <p>${escapeHtml(booking.customerNotes || booking.officeNotes || 'None')}</p>
     <p><a href="${escapeHtml(adminUrl)}">Open Cove Admin</a></p>
   `;
-  return await env.EMAIL.send({
+  return await sendResendEmail(env, {
     to: env.BOOKING_NOTIFY_TO.split(',').map(item => item.trim()).filter(Boolean),
-    from: { email: env.BOOKING_NOTIFY_FROM, name: env.BOOKING_NOTIFY_FROM_NAME || 'Cove Charters' },
-    replyTo: booking.email || undefined,
+    reply_to: booking.email || undefined,
     subject,
     text: lines.join('\n'),
     html
@@ -648,14 +648,32 @@ async function sendCustomerConfirmation(env, booking) {
     <p>Our back office will follow up with the remaining agreement and payment details.</p>
     <p>Please reply with any questions or changes.</p>
   `;
-  return await env.EMAIL.send({
+  return await sendResendEmail(env, {
     to: booking.email,
-    from: { email: env.BOOKING_NOTIFY_FROM, name: env.BOOKING_NOTIFY_FROM_NAME || 'Cove Charters' },
-    replyTo: env.BOOKING_REPLY_TO || env.BOOKING_NOTIFY_FROM,
+    reply_to: env.BOOKING_REPLY_TO || env.BOOKING_NOTIFY_FROM,
     subject,
     text: lines.join('\n'),
     html
   });
+}
+
+async function sendResendEmail(env, message) {
+  const fromName = env.BOOKING_NOTIFY_FROM_NAME || 'Cove Charters';
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${env.RESEND_API_KEY}`,
+      'Content-Type': 'application/json',
+      'User-Agent': 'cove-charters-worker/1.0'
+    },
+    body: JSON.stringify({
+      from: `${fromName} <${env.BOOKING_NOTIFY_FROM}>`,
+      ...message
+    })
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.message || data.error || 'Resend email failed');
+  return data;
 }
 
 function customerConfirmationLines(booking) {
