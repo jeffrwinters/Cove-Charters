@@ -92,6 +92,7 @@ Completed so far:
 - Admin booking cards include quick actions for Confirm, Needs Follow-up, and Decline. These update status, stamp office notes, and copy customer-ready text where applicable.
 - Admin confirmed/completed booking cards include Send Confirmation. It calls `POST /api/v1/bookings/{id}/send-confirmation`; if Resend email sending is not configured, the admin falls back to copying the confirmation text.
 - Booking emails use Resend REST API when `RESEND_API_KEY` and `BOOKING_NOTIFY_FROM` are configured.
+- Current MVP email sender uses the temporary `lakefrontatloto.com` domain. Revisit this configuration after Cove controls `covecharters.com`; likely target is `BOOKING_NOTIFY_FROM=bookings@covecharters.com` with replies routed to the back-office inbox.
 - Agreement handling is intentionally back-office only after confirmation: customer booking requests stay lightweight, while confirmed/completed admin booking cards can track agreement status and copy an agreement packet checklist.
 - Admin Bookings has filters for status, boat, captain, date range, and text search.
 - Admin Bookings includes a master month calendar for dated booking requests; calendar entries respect the same status, boat, captain, date, and search filters.
