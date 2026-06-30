@@ -29,6 +29,15 @@ jobs:
       - name: Install Wrangler
         run: npm install --global wrangler@latest
 
+      - name: List D1 databases
+        env:
+          CF_TOKEN_RAW: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT_RAW: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          export CLOUDFLARE_API_TOKEN="$(printf '%s' "$CF_TOKEN_RAW" | tr -d '\r\n ')"
+          export CLOUDFLARE_ACCOUNT_ID="$(printf '%s' "$CF_ACCOUNT_RAW" | tr -d '\r\n ')"
+          wrangler d1 list
+
       - name: Deploy Worker
         env:
           CF_TOKEN_RAW: ${{ secrets.CLOUDFLARE_API_TOKEN }}
