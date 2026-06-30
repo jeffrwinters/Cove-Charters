@@ -16,6 +16,7 @@ export default {
       if (path.startsWith('/api/v1/boats/')) return await boatById(request, env, cors, path.split('/').pop());
       if (path === '/api/v1/settings') return await settings(request, env, cors);
       if (path === '/api/v1/media') return await media(request, env, cors);
+      if (path.startsWith('/api/v1/media/')) return await mediaById(request, env, cors, path.split('/').pop());
       if (path === '/api/v1/media/upload' || path === '/media/upload' || path === '/upload-media') return await uploadMedia(request, env, cors);
       return json({ error: 'Not found', path }, 404, cors);
     } catch (error) {
@@ -27,7 +28,7 @@ export default {
 async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
-  return json({ ok: true, service: 'cove-api', version: '0.3.5', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN) }, 200, cors);
+  return json({ ok: true, service: 'cove-api', version: '0.3.6', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN) }, 200, cors);
 }
 
 async function settings(request, env, cors) {
@@ -283,6 +284,44 @@ async function uploadMedia(request, env, cors) {
 
   const row = await env.DB.prepare('SELECT * FROM media WHERE id = ?').bind(mediaId).first();
   return json({ ok: true, path, url: publicUrl, media: outMedia(row) }, 200, cors);
+}
+
+async function mediaById(request, env, cors, id) {
+  requireDb(env);
+  if (request.method === 'GET') {
+    const row = await env.DB.prepare('SELECT * FROM media WHERE id = ?').bind(id).first();
+    return row ? json(outMedia(row), 200, cors) : json({ error: 'Media not found' }, 404, cors);
+  }
+
+  const auth = requireAdmin(request, env);
+  if (auth) return json(auth.body, auth.status, cors);
+
+  if (request.method === 'PUT') {
+    const current = await env.DB.prepare('SELECT * FROM media WHERE id = ?').bind(id).first();
+    if (!current) return json({ error: 'Media not found' }, 404, cors);
+
+    const body = await request.json();
+    const next = {
+      title: body.title ?? current.title,
+      alt: body.alt ?? current.alt,
+      sortOrder: body.sortOrder ?? body.sort_order ?? current.sort_order,
+      isCover: body.isCover ?? body.is_cover ?? Boolean(current.is_cover)
+    };
+
+    if (truthy(next.isCover)) await clearCover(env, current.entity_type, current.entity_id);
+    await env.DB.prepare('UPDATE media SET title = ?, alt = ?, sort_order = ?, is_cover = ? WHERE id = ?')
+      .bind(String(next.title || ''), String(next.alt || ''), Number(next.sortOrder || 0), truthy(next.isCover) ? 1 : 0, id)
+      .run();
+    const updated = await env.DB.prepare('SELECT * FROM media WHERE id = ?').bind(id).first();
+    return json({ ok: true, media: outMedia(updated) }, 200, cors);
+  }
+
+  if (request.method === 'DELETE') {
+    await env.DB.prepare('DELETE FROM media WHERE id = ?').bind(id).run();
+    return json({ ok: true, id }, 200, cors);
+  }
+
+  return json({ error: 'GET, PUT, or DELETE required' }, 405, cors);
 }
 
 async function nextMediaSort(env, entityType, entityId, mediaType) {
