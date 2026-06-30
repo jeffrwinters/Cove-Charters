@@ -7,7 +7,11 @@ export default {
 
     try {
       if (request.method === 'GET' && (path === '/health' || path === '/api/v1/health')) return await health(env, cors);
-      if (request.method === 'POST' && path === '/api/v1/admin/import-seed') return await importSeed(env, cors);
+      if (request.method === 'POST' && path === '/api/v1/admin/import-seed') {
+        const auth = requireAdmin(request, env);
+        if (auth) return json(auth.body, auth.status, cors);
+        return await importSeed(env, cors);
+      }
       if (path === '/api/v1/boats') return await boats(request, env, cors);
       if (path.startsWith('/api/v1/boats/')) return await boatById(request, env, cors, path.split('/').pop());
       if (path === '/api/v1/settings') return await settings(request, env, cors);
@@ -22,7 +26,7 @@ export default {
 async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
-  return json({ ok: true, service: 'cove-api', version: '0.3.3', d1: result?.ok === 1 }, 200, cors);
+  return json({ ok: true, service: 'cove-api', version: '0.3.4', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN) }, 200, cors);
 }
 
 async function settings(request, env, cors) {
@@ -32,6 +36,8 @@ async function settings(request, env, cors) {
     return json(rows.results || [], 200, cors);
   }
   if (request.method === 'PUT') {
+    const auth = requireAdmin(request, env);
+    if (auth) return json(auth.body, auth.status, cors);
     const body = await request.json();
     await env.DB.prepare('UPDATE settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?').bind(String(body.value), body.key).run();
     return json({ ok: true }, 200, cors);
@@ -42,10 +48,18 @@ async function settings(request, env, cors) {
 async function boats(request, env, cors) {
   requireDb(env);
   if (request.method === 'GET') {
-    const rows = await env.DB.prepare('SELECT * FROM boats ORDER BY featured DESC, name ASC').all();
+    const rows = await env.DB.prepare(`
+      SELECT b.*,
+        (SELECT base_fee FROM boat_pricing WHERE boat_id = b.id AND active = 1 ORDER BY duration_hours LIMIT 1) AS starting_price,
+        (SELECT plan_name FROM boat_pricing WHERE boat_id = b.id AND active = 1 ORDER BY duration_hours LIMIT 1) AS price_unit
+      FROM boats b
+      ORDER BY featured DESC, name ASC
+    `).all();
     return json((rows.results || []).map(outBoat), 200, cors);
   }
   if (request.method === 'POST') {
+    const auth = requireAdmin(request, env);
+    if (auth) return json(auth.body, auth.status, cors);
     const boat = await request.json();
     const id = boat.id || `boat_${crypto.randomUUID()}`;
     await upsertBoat(env, { ...boat, id });
@@ -57,15 +71,25 @@ async function boats(request, env, cors) {
 async function boatById(request, env, cors, id) {
   requireDb(env);
   if (request.method === 'GET') {
-    const row = await env.DB.prepare('SELECT * FROM boats WHERE id = ?').bind(id).first();
+    const row = await env.DB.prepare(`
+      SELECT b.*,
+        (SELECT base_fee FROM boat_pricing WHERE boat_id = b.id AND active = 1 ORDER BY duration_hours LIMIT 1) AS starting_price,
+        (SELECT plan_name FROM boat_pricing WHERE boat_id = b.id AND active = 1 ORDER BY duration_hours LIMIT 1) AS price_unit
+      FROM boats b
+      WHERE b.id = ? OR b.slug = ?
+    `).bind(id, id).first();
     return row ? json(outBoat(row), 200, cors) : json({ error: 'Boat not found' }, 404, cors);
   }
   if (request.method === 'PUT') {
+    const auth = requireAdmin(request, env);
+    if (auth) return json(auth.body, auth.status, cors);
     const boat = await request.json();
     await upsertBoat(env, { ...boat, id });
     return json({ ok: true, id }, 200, cors);
   }
   if (request.method === 'DELETE') {
+    const auth = requireAdmin(request, env);
+    if (auth) return json(auth.body, auth.status, cors);
     await env.DB.prepare('DELETE FROM boats WHERE id = ?').bind(id).run();
     return json({ ok: true, id }, 200, cors);
   }
@@ -79,8 +103,8 @@ async function importSeed(env, cors) {
 
   for (const boat of seed) {
     await upsertBoat(env, boat);
-    await env.DB.prepare('INSERT OR IGNORE INTO boat_pricing (id, boat_id, plan_name, duration_hours, base_fee) VALUES (?, ?, ?, ?, ?)')
-      .bind(`price_${boat.id}_4h`, boat.id, '4 hour', 4, Number(boat.startingPrice || 0))
+    await env.DB.prepare('INSERT OR REPLACE INTO boat_pricing (id, boat_id, plan_name, duration_hours, base_fee) VALUES (?, ?, ?, ?, ?)')
+      .bind(`price_${boat.id}_4h`, boat.id, boat.priceUnit || '4 hour', 4, Number(boat.startingPrice || 0))
       .run();
     imported += 1;
   }
@@ -96,16 +120,104 @@ async function upsertBoat(env, boat) {
       short_description, source_listing_url, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
   `).bind(
-    boat.id, boat.ownerId || null, boat.slug, boat.name, boat.status || 'draft', boat.lifecycleStatus || 'draft', boat.bookingEnabled ? 1 : 0, boat.featured ? 1 : 0, boat.homePort || null, boat.lengthFt || null, boat.capacity || null, boat.bedrooms || 0, boat.bathrooms || 0, boat.make || null, boat.model || null, boat.type || null, boat.shortDescription || null, boat.sourceListingUrl || null
+    boat.id,
+    boat.ownerId || null,
+    boat.slug,
+    boat.name,
+    boat.status || 'draft',
+    boat.lifecycleStatus || 'draft',
+    boat.bookingEnabled ? 1 : 0,
+    boat.featured ? 1 : 0,
+    boat.homePort || null,
+    boat.lengthFt || null,
+    boat.capacity || null,
+    boat.bedrooms || 0,
+    boat.bathrooms || 0,
+    boat.make || null,
+    boat.model || null,
+    boat.type || null,
+    boat.shortDescription || null,
+    boat.sourceListingUrl || null
   ).run();
+
+  if (boat.startingPrice !== undefined || boat.priceUnit) {
+    await env.DB.prepare('INSERT OR REPLACE INTO boat_pricing (id, boat_id, plan_name, duration_hours, base_fee) VALUES (?, ?, ?, ?, ?)')
+      .bind(`price_${boat.id}_4h`, boat.id, boat.priceUnit || '4 hour', 4, Number(boat.startingPrice || 0))
+      .run();
+  }
 }
 
 function outBoat(row) {
-  return { id: row.id, ownerId: row.owner_id, slug: row.slug, name: row.name, status: row.status, lifecycleStatus: row.lifecycle_status, bookingEnabled: Boolean(row.booking_enabled), featured: Boolean(row.featured), homePort: row.home_port, lengthFt: row.length_ft, capacity: row.capacity, bedrooms: row.bedrooms, bathrooms: row.bathrooms, make: row.make, model: row.model, type: row.boat_type, shortDescription: row.short_description, sourceListingUrl: row.source_listing_url };
+  const boat = {
+    id: row.id,
+    ownerId: row.owner_id,
+    slug: row.slug,
+    name: row.name,
+    status: row.status,
+    lifecycleStatus: row.lifecycle_status,
+    bookingEnabled: Boolean(row.booking_enabled),
+    featured: Boolean(row.featured),
+    homePort: row.home_port,
+    lengthFt: row.length_ft,
+    capacity: row.capacity,
+    bedrooms: row.bedrooms,
+    bathrooms: row.bathrooms,
+    make: row.make,
+    model: row.model,
+    type: row.boat_type,
+    shortDescription: row.short_description,
+    sourceListingUrl: row.source_listing_url,
+    startingPrice: row.starting_price || 0,
+    priceUnit: row.price_unit || 'charter',
+    detailUrl: `boat.html?boat=${encodeURIComponent(row.slug || row.id)}`,
+    media: { photos: [], videos: [] },
+    approvedCaptainIds: []
+  };
+  return { ...boat, ...marketingFields(boat) };
+}
+
+function marketingFields(boat) {
+  const type = String(boat.type || '').toLowerCase();
+  const capacity = Number(boat.capacity || 0);
+  const bedrooms = Number(boat.bedrooms || 0);
+  const bathrooms = Number(boat.bathrooms || 0);
+  const vibe = [];
+  const priorityTags = [];
+  const amenities = ['Captain required'];
+
+  if (capacity >= 7) {
+    vibe.push('large-group');
+    priorityTags.push('space');
+    amenities.push('Large-group layout');
+  } else {
+    vibe.push('small');
+    priorityTags.push('sport');
+  }
+  if (type.includes('sundancer') || type.includes('yacht') || type.includes('premium')) {
+    vibe.push('premium');
+    priorityTags.push('comfort');
+    amenities.push('Premium seating');
+  }
+  if (type.includes('sport') || type.includes('runabout') || type.includes('bowrider')) {
+    vibe.push('sport');
+    amenities.push('Swim platform');
+  }
+  if (capacity >= 10 || boat.featured) vibe.push('party');
+  if (bedrooms > 0) {
+    vibe.push('family');
+    amenities.push('Cabin');
+  }
+  if (bathrooms > 0) amenities.push('Restroom');
+  if (Number(boat.startingPrice || 0) <= 1100) priorityTags.push('value');
+  if (boat.featured) priorityTags.push('premium');
+
+  return { vibe: unique(vibe), priorityTags: unique(priorityTags), amenities: unique(amenities) };
 }
 
 async function uploadMedia(request, env, cors) {
   if (request.method !== 'POST') return json({ error: 'POST required' }, 405, cors);
+  const auth = requireAdmin(request, env);
+  if (auth) return json(auth.body, auth.status, cors);
   const form = await request.formData();
   const file = form.get('file');
   if (!file || typeof file === 'string') return json({ error: 'Missing file field' }, 400, cors);
@@ -134,6 +246,13 @@ async function readSeedJson(env) {
   throw new Error(`Could not read seed boats.json: ${lastError}`);
 }
 
+function requireAdmin(request, env) {
+  if (!env.ADMIN_TOKEN) return { status: 503, body: { error: 'ADMIN_TOKEN is not configured for protected write operations' } };
+  const expected = `Bearer ${env.ADMIN_TOKEN}`;
+  if (request.headers.get('Authorization') !== expected) return { status: 401, body: { error: 'Admin authorization required' } };
+  return null;
+}
+
 function requireDb(env) { if (!env.DB) throw new Error('D1 binding DB is not configured'); }
 function githubHeaders(env) { return { Authorization: `Bearer ${env.GITHUB_TOKEN}`, Accept: 'application/vnd.github+json', 'User-Agent': 'cove-api' }; }
 function corsHeaders(request, env) { const allowed = (env.ALLOWED_ORIGINS || 'https://jeffrwinters.github.io,https://covecharters.com,https://www.covecharters.com').split(',').map(item => item.trim()); const origin = request.headers.get('Origin') || ''; return { 'Access-Control-Allow-Origin': allowed.includes(origin) ? origin : allowed[0], 'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type,Authorization' }; }
@@ -141,3 +260,4 @@ function json(value, status = 200, headers = {}) { return new Response(JSON.stri
 function cleanSegment(value) { return String(value).toLowerCase().replace(/[^a-z0-9-_]+/g, '-').replace(/^-+|-+$/g, '') || 'item'; }
 function cleanFilename(value) { const parts = String(value).split('.'); const ext = parts.length > 1 ? parts.pop().toLowerCase().replace(/[^a-z0-9]/g, '') : 'bin'; return `${cleanSegment(parts.join('.') || 'upload')}.${ext}`; }
 function toBase64(buffer) { let binary = ''; const bytes = new Uint8Array(buffer); for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000)); return btoa(binary); }
+function unique(items) { return [...new Set(items.filter(Boolean))]; }
