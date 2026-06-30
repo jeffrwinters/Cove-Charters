@@ -10,7 +10,7 @@ It is not intended to be another pontoon rental marketplace. The customer experi
 
 The customer product should be a website first, not a consumer mobile app. Most customers will likely book once per season, so an app is not needed for customers at MVP.
 
-Captain and back-office workflows may eventually benefit from app-like or mobile-optimized experiences.
+Back office can remain web-first. Captain workflows should eventually become app-like/mobile-first because captains will need fast access in the field. A customer app is explicitly not near-term unless usage later proves it is worth the overhead.
 
 ## Marketplace Model
 
@@ -53,3 +53,14 @@ Back office is a primary user, not an afterthought. Back office must be able to:
 - Track booking paid status
 - Track settlements
 - Manage operational closeout after trips
+
+## Captain Persona
+
+Captain tooling should eventually be wrapped into an app-like or mobile-first experience. Near-term, the system should keep captain-facing data clean enough to support that future surface:
+
+- Assigned trips
+- Customer and boat details
+- Schedule/availability
+- Agreement copies
+- Trip closeout notes
+- Fuel, mileage, cleaning, and damage reporting
