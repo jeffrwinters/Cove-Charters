@@ -28,7 +28,7 @@ export default {
 async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
-  return json({ ok: true, service: 'cove-api', version: '0.3.6', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN) }, 200, cors);
+  return json({ ok: true, service: 'cove-api', version: '0.3.9', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN) }, 200, cors);
 }
 
 async function settings(request, env, cors) {
@@ -227,7 +227,8 @@ async function listMedia(request, env, cors) {
   const url = new URL(request.url);
   const entityType = normalizeEntityType(url.searchParams.get('entityType') || url.searchParams.get('entity_type') || '');
   const entityId = url.searchParams.get('entityId') || url.searchParams.get('entity_id') || '';
-  const mediaType = normalizeMediaType(url.searchParams.get('mediaType') || url.searchParams.get('media_type') || '');
+  const mediaTypeParam = url.searchParams.get('mediaType') || url.searchParams.get('media_type') || '';
+  const mediaType = mediaTypeParam ? normalizeMediaType(mediaTypeParam) : '';
   const clauses = [];
   const values = [];
 
@@ -245,7 +246,11 @@ async function listMedia(request, env, cors) {
   }
 
   const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
-  const rows = await env.DB.prepare(`SELECT * FROM media ${where} ORDER BY is_cover DESC, sort_order ASC, created_at ASC`).bind(...values).all();
+  let rows = await env.DB.prepare(`SELECT * FROM media ${where} ORDER BY is_cover DESC, sort_order ASC, created_at ASC`).bind(...values).all();
+  if ((!rows.results || rows.results.length === 0) && entityType === 'boat' && entityId) {
+    await backfillBoatMediaFromAssets(env, entityId, mediaType);
+    rows = await env.DB.prepare(`SELECT * FROM media ${where} ORDER BY is_cover DESC, sort_order ASC, created_at ASC`).bind(...values).all();
+  }
   return json((rows.results || []).map(outMedia), 200, cors);
 }
 
@@ -338,6 +343,34 @@ async function clearCover(env, entityType, entityId) {
   await env.DB.prepare('UPDATE media SET is_cover = 0 WHERE entity_type = ? AND entity_id = ?').bind(entityType, entityId).run();
 }
 
+async function backfillBoatMediaFromAssets(env, boatId, requestedMediaType) {
+  const boat = await env.DB.prepare('SELECT id, slug FROM boats WHERE id = ? OR slug = ?').bind(boatId, boatId).first();
+  if (!boat?.slug) return;
+
+  const mediaTypes = requestedMediaType ? [requestedMediaType] : ['photos', 'videos'];
+  for (const mediaType of mediaTypes) {
+    const files = await githubDirectory(env, `assets/boats/${boat.slug}/${mediaType}`);
+    for (let index = 0; index < files.length; index++) {
+      const file = files[index];
+      const title = titleFromFilename(file.name);
+      const isCover = mediaType === 'photos' && index === 0 && await hasNoCover(env, 'boat', boat.id);
+      if (isCover) await clearCover(env, 'boat', boat.id);
+      await env.DB.prepare(`
+        INSERT INTO media (id, entity_type, entity_id, media_type, url, title, alt, sort_order, is_cover)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(`media_${crypto.randomUUID()}`, 'boat', boat.id, mediaType, file.download_url, title, title, index, isCover ? 1 : 0).run();
+    }
+  }
+}
+
+async function githubDirectory(env, path) {
+  const response = await fetch(`https://api.github.com/repos/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/contents/${path}?ref=${env.GITHUB_BRANCH || 'main'}`, { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'cove-api' } });
+  if (response.status === 404) return [];
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.message || `GitHub read failed for ${path}`);
+  return Array.isArray(data) ? data.filter(item => item.type === 'file') : [];
+}
+
 function outMedia(row) {
   return {
     id: row.id,
@@ -383,5 +416,6 @@ function cleanFilename(value) { const parts = String(value).split('.'); const ex
 function normalizeEntityType(value) { const clean = cleanSegment(value); return clean.endsWith('s') ? clean.slice(0, -1) : clean; }
 function normalizeMediaType(value) { const clean = cleanSegment(value); if (clean === 'photo' || clean === 'image' || clean === 'images') return 'photos'; if (clean === 'video') return 'videos'; return clean || 'photos'; }
 function truthy(value) { return ['1', 'true', 'yes', 'on'].includes(String(value || '').toLowerCase()); }
+function titleFromFilename(value) { return String(value || 'Media').replace(/^\d+-/, '').replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase()); }
 function toBase64(buffer) { let binary = ''; const bytes = new Uint8Array(buffer); for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000)); return btoa(binary); }
 function unique(items) { return [...new Set(items.filter(Boolean))]; }
