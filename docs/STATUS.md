@@ -47,6 +47,7 @@ Completed so far:
 - `PUT /api/v1/media/{id}` updates title, alt text, sort order, and cover status.
 - `DELETE /api/v1/media/{id}` deletes a media row.
 - Admin boat detail view loads media, shows cover/gallery/videos, supports Set Cover, and supports drag/drop ordering.
+- Admin media cards support editable captions stored in D1 `title`/`alt` fields.
 - Public `boat.html` loads media for the selected boat.
 - Public boat detail renders a cover-driven hero, gallery carousel, thumbnail strip, and videos when media exists.
 - Public boat detail gracefully shows an empty media state when no media has been uploaded.
