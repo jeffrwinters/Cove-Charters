@@ -15,7 +15,8 @@ export default {
       if (path === '/api/v1/boats') return await boats(request, env, cors);
       if (path.startsWith('/api/v1/boats/')) return await boatById(request, env, cors, path.split('/').pop());
       if (path === '/api/v1/settings') return await settings(request, env, cors);
-      if (path === '/api/v1/media' || path === '/api/v1/media/upload' || path === '/media/upload' || path === '/upload-media') return await uploadMedia(request, env, cors);
+      if (path === '/api/v1/media') return await media(request, env, cors);
+      if (path === '/api/v1/media/upload' || path === '/media/upload' || path === '/upload-media') return await uploadMedia(request, env, cors);
       return json({ error: 'Not found', path }, 404, cors);
     } catch (error) {
       return json({ error: error.message || String(error) }, 500, cors);
@@ -26,7 +27,7 @@ export default {
 async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
-  return json({ ok: true, service: 'cove-api', version: '0.3.4', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN) }, 200, cors);
+  return json({ ok: true, service: 'cove-api', version: '0.3.5', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN) }, 200, cors);
 }
 
 async function settings(request, env, cors) {
@@ -214,22 +215,103 @@ function marketingFields(boat) {
   return { vibe: unique(vibe), priorityTags: unique(priorityTags), amenities: unique(amenities) };
 }
 
+async function media(request, env, cors) {
+  requireDb(env);
+  if (request.method === 'GET') return await listMedia(request, env, cors);
+  if (request.method === 'POST') return await uploadMedia(request, env, cors);
+  return json({ error: 'GET or POST required' }, 405, cors);
+}
+
+async function listMedia(request, env, cors) {
+  const url = new URL(request.url);
+  const entityType = normalizeEntityType(url.searchParams.get('entityType') || url.searchParams.get('entity_type') || '');
+  const entityId = url.searchParams.get('entityId') || url.searchParams.get('entity_id') || '';
+  const mediaType = normalizeMediaType(url.searchParams.get('mediaType') || url.searchParams.get('media_type') || '');
+  const clauses = [];
+  const values = [];
+
+  if (entityType) {
+    clauses.push('entity_type = ?');
+    values.push(entityType);
+  }
+  if (entityId) {
+    clauses.push('entity_id = ?');
+    values.push(entityId);
+  }
+  if (mediaType) {
+    clauses.push('media_type = ?');
+    values.push(mediaType);
+  }
+
+  const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+  const rows = await env.DB.prepare(`SELECT * FROM media ${where} ORDER BY is_cover DESC, sort_order ASC, created_at ASC`).bind(...values).all();
+  return json((rows.results || []).map(outMedia), 200, cors);
+}
+
 async function uploadMedia(request, env, cors) {
   if (request.method !== 'POST') return json({ error: 'POST required' }, 405, cors);
+  requireDb(env);
   const auth = requireAdmin(request, env);
   if (auth) return json(auth.body, auth.status, cors);
   const form = await request.formData();
   const file = form.get('file');
   if (!file || typeof file === 'string') return json({ error: 'Missing file field' }, 400, cors);
-  const entityType = cleanSegment(form.get('entityType') || 'misc');
-  const entitySlug = cleanSegment(form.get('entitySlug') || 'unsorted');
-  const mediaType = cleanSegment(form.get('mediaType') || 'photos');
+
+  const entityType = normalizeEntityType(form.get('entityType') || form.get('entity_type') || 'misc');
+  const entityId = String(form.get('entityId') || form.get('entity_id') || form.get('entitySlug') || form.get('entity_slug') || 'unsorted');
+  const entitySlug = cleanSegment(form.get('entitySlug') || form.get('entity_slug') || entityId);
+  const mediaType = normalizeMediaType(form.get('mediaType') || form.get('media_type') || 'photos');
   if (file.size > Number(env.MAX_UPLOAD_BYTES || 15728640)) return json({ error: 'File too large' }, 413, cors);
+
   const stamp = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
-  const path = `assets/${entityType}/${entitySlug}/${mediaType}/${stamp}-${cleanFilename(file.name || 'upload.bin')}`;
+  const path = `assets/${cleanSegment(entityType)}s/${entitySlug}/${mediaType}/${stamp}-${cleanFilename(file.name || 'upload.bin')}`;
   const response = await fetch(`https://api.github.com/repos/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/contents/${path}`, { method: 'PUT', headers: githubHeaders(env), body: JSON.stringify({ message: `Upload media: ${path}`, content: toBase64(await file.arrayBuffer()), branch: env.GITHUB_BRANCH || 'main' }) });
   if (!response.ok) throw new Error(await response.text());
-  return json({ ok: true, path, url: `/${path}` }, 200, cors);
+
+  const mediaId = `media_${crypto.randomUUID()}`;
+  const publicUrl = `https://${env.GITHUB_OWNER}.github.io/${env.GITHUB_REPO}/${path}`;
+  const title = String(form.get('title') || file.name || 'Uploaded media');
+  const alt = String(form.get('alt') || title);
+  const nextSort = await nextMediaSort(env, entityType, entityId, mediaType);
+  const shouldCover = mediaType === 'photos' && (truthy(form.get('isCover') || form.get('is_cover')) || await hasNoCover(env, entityType, entityId));
+
+  if (shouldCover) await clearCover(env, entityType, entityId);
+  await env.DB.prepare(`
+    INSERT INTO media (id, entity_type, entity_id, media_type, url, title, alt, sort_order, is_cover)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(mediaId, entityType, entityId, mediaType, publicUrl, title, alt, nextSort, shouldCover ? 1 : 0).run();
+
+  const row = await env.DB.prepare('SELECT * FROM media WHERE id = ?').bind(mediaId).first();
+  return json({ ok: true, path, url: publicUrl, media: outMedia(row) }, 200, cors);
+}
+
+async function nextMediaSort(env, entityType, entityId, mediaType) {
+  const row = await env.DB.prepare('SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_sort FROM media WHERE entity_type = ? AND entity_id = ? AND media_type = ?').bind(entityType, entityId, mediaType).first();
+  return Number(row?.next_sort || 0);
+}
+
+async function hasNoCover(env, entityType, entityId) {
+  const row = await env.DB.prepare('SELECT COUNT(*) AS count FROM media WHERE entity_type = ? AND entity_id = ? AND media_type = ? AND is_cover = 1').bind(entityType, entityId, 'photos').first();
+  return Number(row?.count || 0) === 0;
+}
+
+async function clearCover(env, entityType, entityId) {
+  await env.DB.prepare('UPDATE media SET is_cover = 0 WHERE entity_type = ? AND entity_id = ?').bind(entityType, entityId).run();
+}
+
+function outMedia(row) {
+  return {
+    id: row.id,
+    entityType: row.entity_type,
+    entityId: row.entity_id,
+    mediaType: row.media_type,
+    url: row.url,
+    title: row.title,
+    alt: row.alt,
+    sortOrder: row.sort_order,
+    isCover: Boolean(row.is_cover),
+    createdAt: row.created_at
+  };
 }
 
 async function readSeedJson(env) {
@@ -255,9 +337,12 @@ function requireAdmin(request, env) {
 
 function requireDb(env) { if (!env.DB) throw new Error('D1 binding DB is not configured'); }
 function githubHeaders(env) { return { Authorization: `Bearer ${env.GITHUB_TOKEN}`, Accept: 'application/vnd.github+json', 'User-Agent': 'cove-api' }; }
-function corsHeaders(request, env) { const allowed = (env.ALLOWED_ORIGINS || 'https://jeffrwinters.github.io,https://covecharters.com,https://www.covecharters.com').split(',').map(item => item.trim()); const origin = request.headers.get('Origin') || ''; return { 'Access-Control-Allow-Origin': allowed.includes(origin) ? origin : allowed[0], 'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type,Authorization' }; }
+function corsHeaders(request, env) { const allowed = (env.ALLOWED_ORIGINS || 'https://jeffrwinters.github.io,https://covecharters.com,https://www.covecharters.com').split(',').map(item => item.trim()); const origin = request.headers.get('Origin') || ''; return { 'Access-Control-Allow-Origin': allowed.includes(origin) ? origin : allowed[0], 'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS','Access-Control-Allow-Headers': 'Content-Type,Authorization' }; }
 function json(value, status = 200, headers = {}) { return new Response(JSON.stringify(value, null, 2), { status, headers: { ...headers, 'Content-Type': 'application/json' } }); }
 function cleanSegment(value) { return String(value).toLowerCase().replace(/[^a-z0-9-_]+/g, '-').replace(/^-+|-+$/g, '') || 'item'; }
 function cleanFilename(value) { const parts = String(value).split('.'); const ext = parts.length > 1 ? parts.pop().toLowerCase().replace(/[^a-z0-9]/g, '') : 'bin'; return `${cleanSegment(parts.join('.') || 'upload')}.${ext}`; }
+function normalizeEntityType(value) { const clean = cleanSegment(value); return clean.endsWith('s') ? clean.slice(0, -1) : clean; }
+function normalizeMediaType(value) { const clean = cleanSegment(value); if (clean === 'photo' || clean === 'image' || clean === 'images') return 'photos'; if (clean === 'video') return 'videos'; return clean || 'photos'; }
+function truthy(value) { return ['1', 'true', 'yes', 'on'].includes(String(value || '').toLowerCase()); }
 function toBase64(buffer) { let binary = ''; const bytes = new Uint8Array(buffer); for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000)); return btoa(binary); }
 function unique(items) { return [...new Set(items.filter(Boolean))]; }
