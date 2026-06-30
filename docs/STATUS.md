@@ -46,16 +46,19 @@ Completed so far:
 - `PUT /api/v1/media/{id}` updates title, alt text, sort order, and cover status.
 - `DELETE /api/v1/media/{id}` deletes a media row.
 - Admin boat detail view loads media, shows cover/gallery/videos, supports Set Cover, and supports drag/drop ordering.
+- Public `boat.html` loads media for the selected boat.
+- Public boat detail renders a cover-driven hero, gallery carousel, thumbnail strip, and videos when media exists.
+- Public boat detail gracefully shows an empty media state when no media has been uploaded.
 
-Still to finish:
+Still to prove manually:
 
-- Public `boat.html` should load `GET /api/v1/media` for the selected boat.
-- Public boat detail should render cover image, gallery carousel, and videos.
-- Media upload and public rendering should be tested manually with a real boat photo/video.
+- Upload a real boat photo/video from the admin page.
+- Confirm the new media row appears in `GET /api/v1/media?entityType=boat&entityId={boat_id}`.
+- Confirm the public boat detail page renders that cover/gallery/video media.
 
 ## Current Roadmap
 
-1. Finish Media public UI on `boat.html`.
+1. Finish real-media manual test for the Media slice.
 2. Captains vertical slice.
 3. Availability vertical slice.
 4. Booking engine.
