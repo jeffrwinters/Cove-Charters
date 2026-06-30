@@ -95,6 +95,7 @@ Completed so far:
 - Admin confirmed/completed bookings with an assigned captain include Copy Captain Packet and Send Captain Packet. The send action calls `POST /api/v1/bookings/{id}/send-captain-packet` and requires the assigned captain to have an email address.
 - Current MVP email sender uses the temporary `lakefrontatloto.com` domain. Revisit this configuration after Cove controls `covecharters.com`; likely target is `BOOKING_NOTIFY_FROM=bookings@covecharters.com` with replies routed to the back-office inbox.
 - Agreement handling is intentionally back-office only after confirmation: customer booking requests stay lightweight, while confirmed/completed admin booking cards can track agreement status and copy an agreement packet checklist.
+- Confirmed/completed admin booking cards include MVP trip closeout controls for actual hours, payment status, and closeout notes. Complete Trip stamps office notes, marks the booking completed, and copies a settlement summary.
 - Admin Bookings has filters for status, boat, captain, date range, and text search.
 - Admin Bookings includes a master month calendar for dated booking requests; calendar entries respect the same status, boat, captain, date, and search filters.
 - Booking statuses for admin operations are `requested`, `reviewing`, `confirmed`, `completed`, `declined`, and `cancelled`.
@@ -119,7 +120,7 @@ Completed so far:
 1. Add a cleaner captain-facing trip view / future captain app foundation.
 2. Configure Resend sender domain/API key for live booking alerts and customer confirmations.
 3. Turn the agreement packet workflow into real document/e-sign storage.
-4. Trip closeout.
+4. Turn closeout/settlement notes into structured accounting records.
 5. Back office settlement workflow.
 6. Payments.
 7. SEO and public polish.
