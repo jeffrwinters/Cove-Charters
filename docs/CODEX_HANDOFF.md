@@ -53,7 +53,7 @@ Recently proven/fixed:
 
 ## Immediate Goal
 
-Finish the Captains public selection surface. The first Captains API/admin slice is in place.
+Add booking notification/email or export workflow. The first Booking Requests slice is in place.
 
 ## Architectural Rules
 

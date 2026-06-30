@@ -18,7 +18,7 @@ The active Worker file is:
 workers/cove-api-v3-worker.js
 ```
 
-The current API version is `0.3.12` after adding cover photos to boat list responses.
+The current API version is `0.3.13` after the first Booking Requests slice.
 
 ## Working End To End
 
@@ -74,16 +74,27 @@ Completed so far:
 - Admin Command Center has a Captains tab for CRUD.
 - Admin boat detail has an Approved captains panel for assigning captains to boats.
 
+### Booking Requests Slice
+
+Completed so far:
+
+- `GET /api/v1/bookings` returns booking requests joined with customer, boat, and captain names.
+- `POST /api/v1/bookings` creates a customer row and booking request from the public site.
+- `GET /api/v1/bookings/{id}` returns one booking request.
+- `PUT /api/v1/bookings/{id}` updates booking status, paid status, captain, date/time, duration, and office notes.
+- `DELETE /api/v1/bookings/{id}` deletes a booking request.
+- Public `boat.html` has a Request this charter form.
+- Admin Command Center has a Bookings inbox with status updates.
+
 ## Current Roadmap
 
-1. Finish Captains public selection surface.
+1. Add booking notification/email or export workflow.
 2. Availability vertical slice.
-3. Booking engine.
-4. Charter agreements.
-5. Trip closeout.
-6. Back office settlement workflow.
-7. Payments.
-8. SEO and public polish.
+3. Charter agreements.
+4. Trip closeout.
+5. Back office settlement workflow.
+6. Payments.
+7. SEO and public polish.
 
 ## Development Rules
 

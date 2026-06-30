@@ -17,6 +17,8 @@ export default {
       if (path.startsWith('/api/v1/boats/')) return await boatById(request, env, cors, path.split('/').pop());
       if (path === '/api/v1/captains') return await captains(request, env, cors);
       if (path.startsWith('/api/v1/captains/')) return await captainById(request, env, cors, path.split('/').pop());
+      if (path === '/api/v1/bookings') return await bookings(request, env, cors);
+      if (path.startsWith('/api/v1/bookings/')) return await bookingById(request, env, cors, path.split('/').pop());
       if (path === '/api/v1/settings') return await settings(request, env, cors);
       if (path === '/api/v1/media') return await media(request, env, cors);
       if (path.startsWith('/api/v1/media/')) return await mediaById(request, env, cors, path.split('/').pop());
@@ -31,7 +33,7 @@ export default {
 async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
-  return json({ ok: true, service: 'cove-api', version: '0.3.12', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN) }, 200, cors);
+  return json({ ok: true, service: 'cove-api', version: '0.3.13', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN) }, 200, cors);
 }
 
 async function settings(request, env, cors) {
@@ -316,6 +318,156 @@ function outCaptain(row) {
   };
 }
 
+async function bookings(request, env, cors) {
+  requireDb(env);
+  if (request.method === 'GET') {
+    const rows = await env.DB.prepare(bookingSelectSql('ORDER BY bk.created_at DESC')).all();
+    return json((rows.results || []).map(outBooking), 200, cors);
+  }
+  if (request.method === 'POST') {
+    const body = await request.json();
+    if (!body.boatId && !body.boat_id) return json({ error: 'boatId is required' }, 400, cors);
+    if (!body.customerName && !(body.firstName || body.lastName)) return json({ error: 'Customer name is required' }, 400, cors);
+    if (!body.email && !body.phone) return json({ error: 'Email or phone is required' }, 400, cors);
+    const bookingId = body.id || `booking_${crypto.randomUUID()}`;
+    const customerId = body.customerId || `customer_${crypto.randomUUID()}`;
+    const names = splitName(body.customerName, body.firstName, body.lastName);
+    const price = await env.DB.prepare(`
+      SELECT id, base_fee, cleaning_fee, fuel_deposit, tax_rate
+      FROM boat_pricing
+      WHERE boat_id = ? AND active = 1
+      ORDER BY duration_hours
+      LIMIT 1
+    `).bind(body.boatId || body.boat_id).first();
+
+    await env.DB.prepare(`
+      INSERT OR REPLACE INTO customers (id, first_name, last_name, email, phone, notes, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    `).bind(customerId, names.firstName, names.lastName, body.email || null, body.phone || null, body.customerNotes || body.notes || null).run();
+
+    await env.DB.prepare(`
+      INSERT INTO bookings (
+        id, customer_id, boat_id, captain_id, pricing_id, status, paid_status,
+        charter_date, start_time, duration_hours, base_fee, cleaning_fee,
+        fuel_deposit, tax_rate, mileage_rate, office_notes, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    `).bind(
+      bookingId,
+      customerId,
+      body.boatId || body.boat_id,
+      body.captainId || body.captain_id || null,
+      price?.id || null,
+      'requested',
+      'unpaid',
+      body.charterDate || body.charter_date || null,
+      body.startTime || body.start_time || null,
+      Number(body.durationHours || body.duration_hours || 4),
+      Number(price?.base_fee || body.baseFee || 0),
+      Number(price?.cleaning_fee || 0),
+      Number(price?.fuel_deposit || 0),
+      Number(price?.tax_rate || 0.08225),
+      Number(await setting(env, 'mileage_rate', 14)),
+      body.officeNotes || body.notes || null
+    ).run();
+
+    const row = await env.DB.prepare(bookingSelectSql('WHERE bk.id = ?')).bind(bookingId).first();
+    return json({ ok: true, id: bookingId, booking: outBooking(row) }, 201, cors);
+  }
+  return json({ error: 'GET or POST required' }, 405, cors);
+}
+
+async function bookingById(request, env, cors, id) {
+  requireDb(env);
+  if (request.method === 'GET') {
+    const row = await env.DB.prepare(bookingSelectSql('WHERE bk.id = ?')).bind(id).first();
+    return row ? json(outBooking(row), 200, cors) : json({ error: 'Booking not found' }, 404, cors);
+  }
+
+  const auth = requireAdmin(request, env);
+  if (auth) return json(auth.body, auth.status, cors);
+
+  if (request.method === 'PUT') {
+    const current = await env.DB.prepare('SELECT * FROM bookings WHERE id = ?').bind(id).first();
+    if (!current) return json({ error: 'Booking not found' }, 404, cors);
+    const body = await request.json();
+    await env.DB.prepare(`
+      UPDATE bookings
+      SET status = ?, paid_status = ?, captain_id = ?, charter_date = ?, start_time = ?,
+        duration_hours = ?, office_notes = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).bind(
+      body.status || current.status,
+      body.paidStatus || body.paid_status || current.paid_status,
+      body.captainId ?? body.captain_id ?? current.captain_id,
+      body.charterDate ?? body.charter_date ?? current.charter_date,
+      body.startTime ?? body.start_time ?? current.start_time,
+      Number(body.durationHours ?? body.duration_hours ?? current.duration_hours ?? 4),
+      body.officeNotes ?? body.office_notes ?? current.office_notes,
+      id
+    ).run();
+    const row = await env.DB.prepare(bookingSelectSql('WHERE bk.id = ?')).bind(id).first();
+    return json({ ok: true, booking: outBooking(row) }, 200, cors);
+  }
+
+  if (request.method === 'DELETE') {
+    await env.DB.prepare('DELETE FROM bookings WHERE id = ?').bind(id).run();
+    return json({ ok: true, id }, 200, cors);
+  }
+
+  return json({ error: 'GET, PUT, or DELETE required' }, 405, cors);
+}
+
+function bookingSelectSql(suffix = '') {
+  return `
+    SELECT bk.*, b.name AS boat_name, b.slug AS boat_slug, c.name AS captain_name,
+      cu.first_name, cu.last_name, cu.email, cu.phone, cu.notes AS customer_notes
+    FROM bookings bk
+    LEFT JOIN boats b ON b.id = bk.boat_id
+    LEFT JOIN captains c ON c.id = bk.captain_id
+    LEFT JOIN customers cu ON cu.id = bk.customer_id
+    ${suffix}
+  `;
+}
+
+function outBooking(row) {
+  return {
+    id: row.id,
+    customerId: row.customer_id,
+    customerName: [row.first_name, row.last_name].filter(Boolean).join(' ').trim(),
+    email: row.email,
+    phone: row.phone,
+    customerNotes: row.customer_notes,
+    boatId: row.boat_id,
+    boatName: row.boat_name,
+    boatSlug: row.boat_slug,
+    captainId: row.captain_id,
+    captainName: row.captain_name,
+    pricingId: row.pricing_id,
+    status: row.status,
+    paidStatus: row.paid_status,
+    charterDate: row.charter_date,
+    startTime: row.start_time,
+    durationHours: row.duration_hours,
+    baseFee: row.base_fee,
+    cleaningFee: row.cleaning_fee,
+    fuelDeposit: row.fuel_deposit,
+    taxRate: row.tax_rate,
+    mileageRate: row.mileage_rate,
+    taxAmount: row.tax_amount,
+    totalCollected: row.total_collected,
+    officeNotes: row.office_notes,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function splitName(fullName, firstName, lastName) {
+  if (firstName || lastName) return { firstName: firstName || '', lastName: lastName || '' };
+  const parts = String(fullName || '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length <= 1) return { firstName: parts[0] || '', lastName: '' };
+  return { firstName: parts.slice(0, -1).join(' '), lastName: parts.at(-1) };
+}
+
 function marketingFields(boat) {
   const type = String(boat.type || '').toLowerCase();
   const capacity = Number(boat.capacity || 0);
@@ -544,6 +696,12 @@ function requireAdmin(request, env) {
   const expected = `Bearer ${env.ADMIN_TOKEN}`;
   if (request.headers.get('Authorization') !== expected) return { status: 401, body: { error: 'Admin authorization required' } };
   return null;
+}
+
+async function setting(env, key, fallback) {
+  const row = await env.DB.prepare('SELECT value, value_type FROM settings WHERE key = ?').bind(key).first();
+  if (!row) return fallback;
+  return row.value_type === 'number' ? Number(row.value) : row.value;
 }
 
 function requireDb(env) { if (!env.DB) throw new Error('D1 binding DB is not configured'); }
