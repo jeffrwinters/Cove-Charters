@@ -53,7 +53,14 @@ Recently proven/fixed:
 
 ## Immediate Goal
 
-Add booking notification/email or export workflow. The first Booking Requests slice is in place.
+Build the Availability vertical slice so booking requests can be checked against boat and captain availability before confirmation.
+
+The Booking Requests slice is now useful for MVP back-office triage:
+
+- Public boat pages can submit booking requests.
+- Admin booking cards show customer, boat, captain, date/time, duration, customer notes, and office notes.
+- Back office can edit booking status, assigned captain, schedule, duration, and internal notes.
+- Admin includes copy-ready internal summaries plus confirmation and decline customer reply drafts.
 
 ## Architectural Rules
 
@@ -92,15 +99,13 @@ Back office tracks:
 
 ## Roadmap
 
-1. Finish Media manual proof
-2. Captains
-3. Availability
-4. Booking Engine
-5. Charter Agreements
-6. Trip Closeout
-7. Back Office
-8. Payments
-9. SEO and Public Polish
+1. Availability
+2. Booking Engine
+3. Charter Agreements
+4. Trip Closeout
+5. Back Office
+6. Payments
+7. SEO and Public Polish
 
 ## Development Philosophy
 

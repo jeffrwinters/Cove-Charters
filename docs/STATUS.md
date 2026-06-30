@@ -85,12 +85,15 @@ Completed so far:
 - `DELETE /api/v1/bookings/{id}` deletes a booking request.
 - Public `boat.html` has a Request this charter form.
 - Admin Command Center has a Bookings inbox with status updates.
+- Admin booking cards now work as a small operations workbench: status, assigned captain, date, start time, duration, and office notes are editable in place.
+- Admin booking cards include copy-ready internal summaries plus confirmation and decline customer reply drafts.
+- Booking statuses for admin operations are `requested`, `reviewing`, `confirmed`, `completed`, `declined`, and `cancelled`.
 - Booking requests attempt an email notification when the Cloudflare Email Sending binding and notification variables are configured.
 
 ## Current Roadmap
 
-1. Configure Cloudflare Email Sending binding/variables for live booking alerts.
-2. Availability vertical slice.
+1. Availability vertical slice.
+2. Configure Cloudflare Email Sending binding/variables for live booking alerts.
 3. Charter agreements.
 4. Trip closeout.
 5. Back office settlement workflow.

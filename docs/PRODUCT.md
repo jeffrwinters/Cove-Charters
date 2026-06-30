@@ -49,6 +49,10 @@ Back office is a primary user, not an afterthought. Back office must be able to:
 
 - Change boats on bookings
 - Change captains on bookings
+- Assign an approved captain to a booking
+- Track requested, reviewing, confirmed, completed, declined, and cancelled booking states
+- Keep internal office notes on booking requests
+- Copy customer-ready confirmation and decline messages
 - Facilitate payouts
 - Track booking paid status
 - Track settlements
