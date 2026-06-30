@@ -53,7 +53,7 @@ Recently proven/fixed:
 
 ## Immediate Goal
 
-Build the Availability vertical slice so booking requests can be checked against boat and captain availability before confirmation.
+Refine availability conflict handling so booking requests can be checked against boat and captain availability before confirmation.
 
 The Booking Requests slice is now useful for MVP back-office triage:
 
@@ -63,6 +63,9 @@ The Booking Requests slice is now useful for MVP back-office triage:
 - Admin includes copy-ready internal summaries plus confirmation and decline customer reply drafts.
 - Admin Bookings can be filtered by status, boat, captain, date range, and text search.
 - Admin Bookings includes a master month calendar for dated booking requests. Calendar entries use the same filters and click through to the matching booking card.
+- Admin Bookings can create availability blocks for boats and captains.
+- Availability blocks appear on the admin calendar and can be deleted from calendar entries.
+- Booking cards show warnings when the selected boat or captain overlaps an availability block.
 
 ## Architectural Rules
 
@@ -101,7 +104,7 @@ Back office tracks:
 
 ## Roadmap
 
-1. Availability rules/data model for boat and captain blackout dates, holds, and conflicts
+1. Refine availability conflicts and public booking guidance
 2. Booking Engine
 3. Charter Agreements
 4. Trip Closeout

@@ -17,6 +17,8 @@ export default {
       if (path.startsWith('/api/v1/boats/')) return await boatById(request, env, cors, path.split('/').pop());
       if (path === '/api/v1/captains') return await captains(request, env, cors);
       if (path.startsWith('/api/v1/captains/')) return await captainById(request, env, cors, path.split('/').pop());
+      if (path === '/api/v1/availability') return await availability(request, env, cors);
+      if (path.startsWith('/api/v1/availability/')) return await availabilityById(request, env, cors, path.split('/').pop());
       if (path === '/api/v1/bookings') return await bookings(request, env, cors, ctx);
       if (path.startsWith('/api/v1/bookings/')) return await bookingById(request, env, cors, path.split('/').pop());
       if (path === '/api/v1/settings') return await settings(request, env, cors);
@@ -33,7 +35,7 @@ export default {
 async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
-  return json({ ok: true, service: 'cove-api', version: '0.3.14', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(env.EMAIL && env.BOOKING_NOTIFY_TO && env.BOOKING_NOTIFY_FROM) }, 200, cors);
+  return json({ ok: true, service: 'cove-api', version: '0.3.15', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(env.EMAIL && env.BOOKING_NOTIFY_TO && env.BOOKING_NOTIFY_FROM) }, 200, cors);
 }
 
 async function settings(request, env, cors) {
@@ -313,6 +315,102 @@ function outCaptain(row) {
     approvedBoatCount: Number(row.approved_boat_count || 0),
     approvalStatus: row.approval_status,
     approvalNotes: row.approval_notes,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+async function availability(request, env, cors) {
+  requireDb(env);
+  if (request.method === 'GET') {
+    const url = new URL(request.url);
+    const clauses = [];
+    const values = [];
+    for (const [param, column] of [['entityType', 'entity_type'], ['entityId', 'entity_id'], ['status', 'status']]) {
+      const value = url.searchParams.get(param) || url.searchParams.get(column);
+      if (value) {
+        clauses.push(`${column} = ?`);
+        values.push(value);
+      }
+    }
+    const from = url.searchParams.get('from');
+    const to = url.searchParams.get('to');
+    if (from) {
+      clauses.push('end_at >= ?');
+      values.push(from);
+    }
+    if (to) {
+      clauses.push('start_at <= ?');
+      values.push(to);
+    }
+    const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+    const rows = await env.DB.prepare(`SELECT * FROM availability ${where} ORDER BY start_at ASC, entity_type ASC`).bind(...values).all();
+    return json((rows.results || []).map(outAvailability), 200, cors);
+  }
+  if (request.method === 'POST') {
+    const auth = requireAdmin(request, env);
+    if (auth) return json(auth.body, auth.status, cors);
+    const body = await request.json();
+    if (!body.entityType && !body.entity_type) return json({ error: 'entityType is required' }, 400, cors);
+    if (!body.entityId && !body.entity_id) return json({ error: 'entityId is required' }, 400, cors);
+    if (!body.startAt && !body.start_at) return json({ error: 'startAt is required' }, 400, cors);
+    if (!body.endAt && !body.end_at) return json({ error: 'endAt is required' }, 400, cors);
+    const id = body.id || `availability_${crypto.randomUUID()}`;
+    await upsertAvailability(env, { ...body, id });
+    const row = await env.DB.prepare('SELECT * FROM availability WHERE id = ?').bind(id).first();
+    return json({ ok: true, id, availability: outAvailability(row) }, 201, cors);
+  }
+  return json({ error: 'GET or POST required' }, 405, cors);
+}
+
+async function availabilityById(request, env, cors, id) {
+  requireDb(env);
+  if (request.method === 'GET') {
+    const row = await env.DB.prepare('SELECT * FROM availability WHERE id = ?').bind(id).first();
+    return row ? json(outAvailability(row), 200, cors) : json({ error: 'Availability block not found' }, 404, cors);
+  }
+  const auth = requireAdmin(request, env);
+  if (auth) return json(auth.body, auth.status, cors);
+  if (request.method === 'PUT') {
+    const current = await env.DB.prepare('SELECT * FROM availability WHERE id = ?').bind(id).first();
+    if (!current) return json({ error: 'Availability block not found' }, 404, cors);
+    const body = await request.json();
+    await upsertAvailability(env, { ...current, ...body, id });
+    const row = await env.DB.prepare('SELECT * FROM availability WHERE id = ?').bind(id).first();
+    return json({ ok: true, availability: outAvailability(row) }, 200, cors);
+  }
+  if (request.method === 'DELETE') {
+    await env.DB.prepare('DELETE FROM availability WHERE id = ?').bind(id).run();
+    return json({ ok: true, id }, 200, cors);
+  }
+  return json({ error: 'GET, PUT, or DELETE required' }, 405, cors);
+}
+
+async function upsertAvailability(env, block) {
+  await env.DB.prepare(`
+    INSERT OR REPLACE INTO availability (
+      id, entity_type, entity_id, start_at, end_at, status, notes, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+  `).bind(
+    block.id,
+    block.entityType || block.entity_type,
+    block.entityId || block.entity_id,
+    block.startAt || block.start_at,
+    block.endAt || block.end_at,
+    block.status || 'hold',
+    block.notes || null
+  ).run();
+}
+
+function outAvailability(row) {
+  return {
+    id: row.id,
+    entityType: row.entity_type,
+    entityId: row.entity_id,
+    startAt: row.start_at,
+    endAt: row.end_at,
+    status: row.status,
+    notes: row.notes,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };

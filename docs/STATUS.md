@@ -18,7 +18,7 @@ The active Worker file is:
 workers/cove-api-v3-worker.js
 ```
 
-The current API version is `0.3.14` after adding optional booking email notifications.
+The current API version is `0.3.15` after adding availability blocks.
 
 ## Working End To End
 
@@ -92,9 +92,23 @@ Completed so far:
 - Booking statuses for admin operations are `requested`, `reviewing`, `confirmed`, `completed`, `declined`, and `cancelled`.
 - Booking requests attempt an email notification when the Cloudflare Email Sending binding and notification variables are configured.
 
+### Availability Slice
+
+Completed so far:
+
+- Remote D1 now has the `availability` table and `idx_availability_entity` index from `migrations/0002_create_availability.sql`.
+- `GET /api/v1/availability` lists availability blocks and supports filters for `entityType`, `entityId`, `status`, `from`, and `to`.
+- `POST /api/v1/availability` creates protected admin availability blocks.
+- `GET /api/v1/availability/{id}` returns one availability block.
+- `PUT /api/v1/availability/{id}` updates a protected admin availability block.
+- `DELETE /api/v1/availability/{id}` deletes a protected admin availability block.
+- Admin Bookings can create boat/captain holds, unavailable windows, maintenance blocks, and captain unavailable blocks.
+- Admin calendar renders availability blocks alongside bookings.
+- Booking cards show availability conflict warnings when their boat or captain overlaps an availability block.
+
 ## Current Roadmap
 
-1. Availability rules/data model for boat and captain blackout dates, holds, and conflicts.
+1. Refine conflict handling and expose trusted availability guidance on public booking requests.
 2. Configure Cloudflare Email Sending binding/variables for live booking alerts.
 3. Charter agreements.
 4. Trip closeout.
