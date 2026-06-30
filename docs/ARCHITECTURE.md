@@ -4,6 +4,8 @@
 
 Cove is moving from a static JSON prototype to a production backend using Cloudflare Workers and Cloudflare D1.
 
+For the latest implementation status, start with `docs/STATUS.md`.
+
 ## Deployment
 
 The Cove API Worker is deployed through GitHub Actions using Wrangler.
@@ -14,6 +16,7 @@ Important deployment pieces:
 - GitHub Actions workflow for Worker deployment
 - Cloudflare API token in GitHub secrets
 - Cloudflare account ID in GitHub secrets
+- Worker secrets: `GITHUB_TOKEN` and `ADMIN_TOKEN`
 - D1 database binding named `DB`
 
 ## Backend
@@ -27,16 +30,30 @@ Current core endpoints:
 - `PUT /api/v1/settings`
 - `GET /api/v1/boats`
 - `POST /api/v1/boats`
-- `GET /api/v1/boats/{id}`
+- `GET /api/v1/boats/{id-or-slug}`
 - `PUT /api/v1/boats/{id}`
 - `DELETE /api/v1/boats/{id}`
+- `GET /api/v1/media`
 - `POST /api/v1/media`
+- `GET /api/v1/media/{id}`
+- `PUT /api/v1/media/{id}`
+- `DELETE /api/v1/media/{id}`
+
+Public reads can remain public where appropriate. Admin writes require `Authorization: Bearer <ADMIN_TOKEN>`.
 
 ## Database
 
 Cloudflare D1 is the source of truth.
 
 JSON files are now fallback/prototype data only and should not be treated as authoritative for migrated domains.
+
+Current migrated domains:
+
+- Boats
+- Boat pricing
+- Media metadata
+
+Media binary files are stored as repository assets and served by GitHub Pages. Media metadata is stored in D1.
 
 ## Frontend
 
@@ -47,6 +64,8 @@ Pages currently include:
 - `index.html` public homepage
 - `boat.html` public boat detail
 - `admin.html` operations/admin interface
+
+The admin interface stores the entered admin token in browser local storage and sends it as a bearer token for protected writes.
 
 ## Design Principle
 
@@ -61,6 +80,4 @@ Do not build large disconnected layers before proving the slice end-to-end.
 
 ## Security Note
 
-Admin endpoints are currently lightly protected or unprotected during bootstrap. Before production, admin writes should be authenticated and authorization-aware.
-
-Public GET endpoints can remain public where appropriate.
+Admin write endpoints are protected by `ADMIN_TOKEN`. This is acceptable for the bootstrap/admin prototype but should eventually move toward user-aware authentication and authorization before broad production use.
