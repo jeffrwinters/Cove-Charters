@@ -42,30 +42,17 @@ Completed so far:
 - `DELETE /api/v1/media/{id}` deletes a media row
 - Admin boat detail view shows cover photo, gallery photos, and videos
 - Admin supports Set Cover and drag/drop sort persistence
+- Public `boat.html` renders boat media with a cover-driven hero, gallery carousel, thumbnail strip, and videos
 
-Still to finish:
+Still to prove manually:
 
-- Public `boat.html` should load media using `GET /api/v1/media`
-- Public boat detail should display cover image, gallery carousel, and videos
-- Real upload/rendering should be manually tested end-to-end
+- Upload a real boat photo/video from admin
+- Confirm the media row through `GET /api/v1/media?entityType=boat&entityId={boat_id}`
+- Confirm the public detail page renders the uploaded media
 
 ## Immediate Goal
 
-Finish the Media vertical slice on the public boat detail page.
-
-### Public Site
-
-Boat detail page should load media using:
-
-```txt
-GET /api/v1/media?entityType=boat&entityId={boat_id}
-```
-
-It should display:
-
-- Cover image
-- Gallery carousel or simple gallery grid
-- Videos
+Complete the real-media manual test. Once that is proven, move to the Captains vertical slice.
 
 ## Architectural Rules
 
@@ -104,7 +91,7 @@ Back office tracks:
 
 ## Roadmap
 
-1. Finish Media
+1. Finish Media manual proof
 2. Captains
 3. Availability
 4. Booking Engine
