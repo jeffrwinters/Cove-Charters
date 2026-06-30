@@ -36,6 +36,7 @@ Completed:
 Completed so far:
 
 - `POST /api/v1/media` uploads a file and inserts a row in the D1 `media` table
+- Uploaded media rows store `raw.githubusercontent.com` URLs to avoid GitHub Pages publish lag in admin/public previews
 - `GET /api/v1/media` supports `entityType`, `entityId`, and `mediaType` filters
 - `GET /api/v1/media/{id}` returns one media row
 - `PUT /api/v1/media/{id}` updates title, alt, sort order, and cover status
@@ -44,15 +45,15 @@ Completed so far:
 - Admin supports Set Cover and drag/drop sort persistence
 - Public `boat.html` renders boat media with a cover-driven hero, gallery carousel, thumbnail strip, and videos
 
-Still to prove manually:
+Recently proven/fixed:
 
-- Upload a real boat photo/video from admin
-- Confirm the media row through `GET /api/v1/media?entityType=boat&entityId={boat_id}`
-- Confirm the public detail page renders the uploaded media
+- Real boat photos upload from admin and create D1 media rows
+- Existing media URLs were migrated from GitHub Pages URLs to raw GitHub URLs
+- Hose Monkey uploaded photos return `200 image/jpeg` from their stored URLs
 
 ## Immediate Goal
 
-Complete the real-media manual test. Once that is proven, move to the Captains vertical slice.
+Move to the Captains vertical slice.
 
 ## Architectural Rules
 

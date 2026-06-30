@@ -1,6 +1,6 @@
 # Cove Charters Status
 
-Last updated: 2026-06-29
+Last updated: 2026-06-30
 
 ## Current State
 
@@ -18,7 +18,7 @@ The active Worker file is:
 workers/cove-api-v3-worker.js
 ```
 
-The current API version is `0.3.6` after the media endpoint work.
+The current API version is `0.3.10` after the media URL fix.
 
 ## Working End To End
 
@@ -40,7 +40,8 @@ The current API version is `0.3.6` after the media endpoint work.
 
 Completed so far:
 
-- `POST /api/v1/media` uploads files to GitHub Pages assets and inserts a D1 `media` row.
+- `POST /api/v1/media` uploads files to GitHub repo assets and inserts a D1 `media` row.
+- Uploaded media rows store `raw.githubusercontent.com` URLs so admin/public previews work immediately without waiting for GitHub Pages publishing.
 - `GET /api/v1/media?entityType=boat&entityId={boat_id}` returns ordered media rows.
 - `GET /api/v1/media/{id}` returns one media row.
 - `PUT /api/v1/media/{id}` updates title, alt text, sort order, and cover status.
@@ -50,23 +51,22 @@ Completed so far:
 - Public boat detail renders a cover-driven hero, gallery carousel, thumbnail strip, and videos when media exists.
 - Public boat detail gracefully shows an empty media state when no media has been uploaded.
 
-Still to prove manually:
+Recently proven/fixed:
 
-- Upload a real boat photo/video from the admin page.
-- Confirm the new media row appears in `GET /api/v1/media?entityType=boat&entityId={boat_id}`.
-- Confirm the public boat detail page renders that cover/gallery/video media.
+- Real boat photos upload from the admin page and create D1 media rows.
+- Existing media URLs were migrated from GitHub Pages URLs to raw GitHub URLs.
+- Hose Monkey uploaded photos return `200 image/jpeg` from their stored URLs.
 
 ## Current Roadmap
 
-1. Finish real-media manual test for the Media slice.
-2. Captains vertical slice.
-3. Availability vertical slice.
-4. Booking engine.
-5. Charter agreements.
-6. Trip closeout.
-7. Back office settlement workflow.
-8. Payments.
-9. SEO and public polish.
+1. Captains vertical slice.
+2. Availability vertical slice.
+3. Booking engine.
+4. Charter agreements.
+5. Trip closeout.
+6. Back office settlement workflow.
+7. Payments.
+8. SEO and public polish.
 
 ## Development Rules
 

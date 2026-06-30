@@ -28,7 +28,7 @@ export default {
 async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
-  return json({ ok: true, service: 'cove-api', version: '0.3.9', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN) }, 200, cors);
+  return json({ ok: true, service: 'cove-api', version: '0.3.10', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN) }, 200, cors);
 }
 
 async function settings(request, env, cors) {
@@ -272,10 +272,11 @@ async function uploadMedia(request, env, cors) {
   const stamp = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
   const path = `assets/${cleanSegment(entityType)}s/${entitySlug}/${mediaType}/${stamp}-${cleanFilename(file.name || 'upload.bin')}`;
   const response = await fetch(`https://api.github.com/repos/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/contents/${path}`, { method: 'PUT', headers: githubHeaders(env), body: JSON.stringify({ message: `Upload media: ${path}`, content: toBase64(await file.arrayBuffer()), branch: env.GITHUB_BRANCH || 'main' }) });
-  if (!response.ok) throw new Error(await response.text());
+  const uploaded = await response.json();
+  if (!response.ok) throw new Error(uploaded.message || JSON.stringify(uploaded));
 
   const mediaId = `media_${crypto.randomUUID()}`;
-  const publicUrl = `https://${env.GITHUB_OWNER}.github.io/${env.GITHUB_REPO}/${path}`;
+  const publicUrl = uploaded.content?.download_url || `https://raw.githubusercontent.com/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/${env.GITHUB_BRANCH || 'main'}/${path}`;
   const title = String(form.get('title') || file.name || 'Uploaded media');
   const alt = String(form.get('alt') || title);
   const nextSort = await nextMediaSort(env, entityType, entityId, mediaType);
