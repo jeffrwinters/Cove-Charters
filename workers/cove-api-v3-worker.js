@@ -20,6 +20,7 @@ export default {
       if (path === '/api/v1/availability') return await availability(request, env, cors);
       if (path.startsWith('/api/v1/availability/')) return await availabilityById(request, env, cors, path.split('/').pop());
       if (path === '/api/v1/bookings') return await bookings(request, env, cors, ctx);
+      if (path.match(/^\/api\/v1\/bookings\/[^/]+\/send-confirmation$/)) return await sendBookingConfirmation(request, env, cors, path.split('/')[4]);
       if (path.startsWith('/api/v1/bookings/')) return await bookingById(request, env, cors, path.split('/').pop());
       if (path === '/api/v1/settings') return await settings(request, env, cors);
       if (path === '/api/v1/media') return await media(request, env, cors);
@@ -35,7 +36,7 @@ export default {
 async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
-  return json({ ok: true, service: 'cove-api', version: '0.3.15', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(env.EMAIL && env.BOOKING_NOTIFY_TO && env.BOOKING_NOTIFY_FROM) }, 200, cors);
+  return json({ ok: true, service: 'cove-api', version: '0.3.16', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(env.EMAIL && env.BOOKING_NOTIFY_TO && env.BOOKING_NOTIFY_FROM), customerEmail: Boolean(env.EMAIL && env.BOOKING_NOTIFY_FROM) }, 200, cors);
 }
 
 async function settings(request, env, cors) {
@@ -518,6 +519,31 @@ async function bookingById(request, env, cors, id) {
   return json({ error: 'GET, PUT, or DELETE required' }, 405, cors);
 }
 
+async function sendBookingConfirmation(request, env, cors, id) {
+  requireDb(env);
+  const auth = requireAdmin(request, env);
+  if (auth) return json(auth.body, auth.status, cors);
+  if (request.method !== 'POST') return json({ error: 'POST required' }, 405, cors);
+
+  const row = await env.DB.prepare(bookingSelectSql('WHERE bk.id = ?')).bind(id).first();
+  if (!row) return json({ error: 'Booking not found' }, 404, cors);
+  const booking = outBooking(row);
+  if (!booking.email) return json({ error: 'Booking has no customer email address' }, 400, cors);
+  if (!env.EMAIL || !env.BOOKING_NOTIFY_FROM) {
+    return json({ ok: false, sent: false, configured: false, error: 'Customer email is not configured' }, 501, cors);
+  }
+
+  const result = await sendCustomerConfirmation(env, booking);
+  const note = `[${new Date().toLocaleString('en-US', { timeZone: 'America/Chicago' })}] Confirmation email sent to ${booking.email}`;
+  await env.DB.prepare(`
+    UPDATE bookings
+    SET office_notes = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).bind([booking.officeNotes, note].filter(Boolean).join('\n'), id).run();
+
+  return json({ ok: true, sent: true, result }, 200, cors);
+}
+
 function bookingSelectSql(suffix = '') {
   return `
     SELECT bk.*, b.name AS boat_name, b.slug AS boat_slug, c.name AS captain_name,
@@ -609,6 +635,45 @@ async function sendBookingNotification(env, booking) {
     text: lines.join('\n'),
     html
   });
+}
+
+async function sendCustomerConfirmation(env, booking) {
+  const subject = `Cove Charters booking confirmation: ${booking.boatName || booking.boatId}`;
+  const lines = customerConfirmationLines(booking);
+  const html = `
+    <h2>Your Cove Charters booking is confirmed</h2>
+    <p>Hi ${escapeHtml(booking.customerName || 'there')},</p>
+    <p>We can confirm your charter request.</p>
+    <p><strong>Boat:</strong> ${escapeHtml(booking.boatName || booking.boatId)}<br><strong>Date:</strong> ${escapeHtml(booking.charterDate || 'TBD')}<br><strong>Start:</strong> ${escapeHtml(booking.startTime || 'TBD')}<br><strong>Duration:</strong> ${escapeHtml(booking.durationHours || 'TBD')} hours<br><strong>Captain:</strong> ${escapeHtml(booking.captainName || 'Captain TBD')}</p>
+    <p>Our back office will follow up with the remaining agreement and payment details.</p>
+    <p>Please reply with any questions or changes.</p>
+  `;
+  return await env.EMAIL.send({
+    to: booking.email,
+    from: { email: env.BOOKING_NOTIFY_FROM, name: env.BOOKING_NOTIFY_FROM_NAME || 'Cove Charters' },
+    replyTo: env.BOOKING_REPLY_TO || env.BOOKING_NOTIFY_FROM,
+    subject,
+    text: lines.join('\n'),
+    html
+  });
+}
+
+function customerConfirmationLines(booking) {
+  return [
+    `Hi ${booking.customerName || 'there'},`,
+    ``,
+    `We can confirm your Cove Charters booking.`,
+    ``,
+    `Boat: ${booking.boatName || booking.boatId}`,
+    `Date: ${booking.charterDate || 'TBD'}`,
+    `Start time: ${booking.startTime || 'TBD'}`,
+    `Duration: ${booking.durationHours || 'TBD'} hours`,
+    `Captain: ${booking.captainName || 'Captain TBD'}`,
+    ``,
+    `Our back office will follow up with the remaining agreement and payment details.`,
+    ``,
+    `Please reply with any questions or changes.`
+  ];
 }
 
 function escapeHtml(value) {

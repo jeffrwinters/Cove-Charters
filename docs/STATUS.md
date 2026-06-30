@@ -18,7 +18,7 @@ The active Worker file is:
 workers/cove-api-v3-worker.js
 ```
 
-The current API version is `0.3.15` after adding availability blocks.
+The current API version is `0.3.16` after adding the protected customer confirmation email endpoint.
 
 ## Working End To End
 
@@ -90,6 +90,7 @@ Completed so far:
 - Admin booking cards now work as a small operations workbench: status, assigned captain, date, start time, duration, and office notes are editable in place.
 - Admin booking cards include copy-ready internal summaries plus confirmation and decline customer reply drafts.
 - Admin booking cards include quick actions for Confirm, Needs Follow-up, and Decline. These update status, stamp office notes, and copy customer-ready text where applicable.
+- Admin confirmed/completed booking cards include Send Confirmation. It calls `POST /api/v1/bookings/{id}/send-confirmation`; if customer email sending is not configured, the admin falls back to copying the confirmation text.
 - Agreement handling is intentionally back-office only after confirmation: customer booking requests stay lightweight, while confirmed/completed admin booking cards can track agreement status and copy an agreement packet checklist.
 - Admin Bookings has filters for status, boat, captain, date range, and text search.
 - Admin Bookings includes a master month calendar for dated booking requests; calendar entries respect the same status, boat, captain, date, and search filters.
@@ -112,8 +113,8 @@ Completed so far:
 
 ## Current Roadmap
 
-1. Captain availability guidance and customer confirmation email workflow.
-2. Configure Cloudflare Email Sending binding/variables for live booking alerts.
+1. Captain availability guidance and captain trip packet workflow.
+2. Configure Cloudflare Email Sending binding/variables for live booking alerts and customer confirmations.
 3. Turn the agreement packet workflow into real document/e-sign storage.
 4. Trip closeout.
 5. Back office settlement workflow.
