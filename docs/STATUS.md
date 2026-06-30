@@ -84,6 +84,8 @@ Completed so far:
 - `PUT /api/v1/bookings/{id}` updates booking status, paid status, captain, date/time, duration, and office notes.
 - `DELETE /api/v1/bookings/{id}` deletes a booking request.
 - Public `boat.html` has a Request this charter form.
+- Public `boat.html` checks selected boat/date/time against availability blocks and shows a non-blocking availability message.
+- Public booking requests append the availability guidance shown to the customer into customer notes for back-office context.
 - Admin Command Center has a Bookings inbox with status updates.
 - Admin booking cards now work as a small operations workbench: status, assigned captain, date, start time, duration, and office notes are editable in place.
 - Admin booking cards include copy-ready internal summaries plus confirmation and decline customer reply drafts.
@@ -108,7 +110,7 @@ Completed so far:
 
 ## Current Roadmap
 
-1. Refine conflict handling and expose trusted availability guidance on public booking requests.
+1. Captain availability guidance and customer confirmation email workflow.
 2. Configure Cloudflare Email Sending binding/variables for live booking alerts.
 3. Charter agreements.
 4. Trip closeout.
