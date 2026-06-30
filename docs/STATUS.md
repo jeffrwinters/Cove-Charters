@@ -88,12 +88,13 @@ Completed so far:
 - Admin booking cards now work as a small operations workbench: status, assigned captain, date, start time, duration, and office notes are editable in place.
 - Admin booking cards include copy-ready internal summaries plus confirmation and decline customer reply drafts.
 - Admin Bookings has filters for status, boat, captain, date range, and text search.
+- Admin Bookings includes a master month calendar for dated booking requests; calendar entries respect the same status, boat, captain, date, and search filters.
 - Booking statuses for admin operations are `requested`, `reviewing`, `confirmed`, `completed`, `declined`, and `cancelled`.
 - Booking requests attempt an email notification when the Cloudflare Email Sending binding and notification variables are configured.
 
 ## Current Roadmap
 
-1. Availability vertical slice, including a master calendar view for all boats with boat-level filtering.
+1. Availability rules/data model for boat and captain blackout dates, holds, and conflicts.
 2. Configure Cloudflare Email Sending binding/variables for live booking alerts.
 3. Charter agreements.
 4. Trip closeout.

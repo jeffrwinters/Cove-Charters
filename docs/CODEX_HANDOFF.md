@@ -62,6 +62,7 @@ The Booking Requests slice is now useful for MVP back-office triage:
 - Back office can edit booking status, assigned captain, schedule, duration, and internal notes.
 - Admin includes copy-ready internal summaries plus confirmation and decline customer reply drafts.
 - Admin Bookings can be filtered by status, boat, captain, date range, and text search.
+- Admin Bookings includes a master month calendar for dated booking requests. Calendar entries use the same filters and click through to the matching booking card.
 
 ## Architectural Rules
 
@@ -100,7 +101,7 @@ Back office tracks:
 
 ## Roadmap
 
-1. Availability, starting with a master calendar view for all boats and filters for each boat
+1. Availability rules/data model for boat and captain blackout dates, holds, and conflicts
 2. Booking Engine
 3. Charter Agreements
 4. Trip Closeout
