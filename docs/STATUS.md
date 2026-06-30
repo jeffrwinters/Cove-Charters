@@ -53,6 +53,7 @@ Completed so far:
 - Public boat detail gracefully shows an empty media state when no media has been uploaded.
 - Public homepage fleet cards use each boat's uploaded cover photo when available.
 - Public homepage and boat detail pages include baseline SEO metadata, canonical URLs, Open Graph tags, and lightweight structured data.
+- Public boat detail page has customer-facing language for overview, media, amenities, and available captains; internal/admin MVP wording is hidden from guests.
 
 Recently proven/fixed:
 
