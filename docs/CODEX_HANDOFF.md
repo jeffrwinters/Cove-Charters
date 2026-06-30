@@ -4,6 +4,8 @@
 
 Cove Charters is a premium charter marketplace for Lake of the Ozarks focused on upscale experiences. The architecture is moving from a JSON prototype to a production Cloudflare Worker plus D1 backend.
 
+For the latest concise project state, start with `docs/STATUS.md`.
+
 ## Current Status
 
 ### Infrastructure
@@ -13,6 +15,8 @@ Cove Charters is a premium charter marketplace for Lake of the Ozarks focused on
 - Database schema initialized
 - Seed boats imported into D1
 - Business settings stored in D1, including editable mileage rate
+- `ADMIN_TOKEN` configured in Cloudflare Worker secrets
+- Admin write endpoints protected with bearer-token auth
 
 ### Boat Vertical Slice
 
@@ -25,71 +29,42 @@ Completed:
   - `POST /api/v1/boats`
   - `PUT /api/v1/boats/{id}`
   - `DELETE /api/v1/boats/{id}`
+- Boat pricing returns from D1 as `startingPrice` and `priceUnit`
 
-Boat uploads currently store files successfully.
+### Media Vertical Slice
 
-Current limitation:
+Completed so far:
 
-- Uploads do not yet create rows in the D1 `media` table.
+- `POST /api/v1/media` uploads a file and inserts a row in the D1 `media` table
+- `GET /api/v1/media` supports `entityType`, `entityId`, and `mediaType` filters
+- `GET /api/v1/media/{id}` returns one media row
+- `PUT /api/v1/media/{id}` updates title, alt, sort order, and cover status
+- `DELETE /api/v1/media/{id}` deletes a media row
+- Admin boat detail view shows cover photo, gallery photos, and videos
+- Admin supports Set Cover and drag/drop sort persistence
+
+Still to finish:
+
+- Public `boat.html` should load media using `GET /api/v1/media`
+- Public boat detail should display cover image, gallery carousel, and videos
+- Real upload/rendering should be manually tested end-to-end
 
 ## Immediate Goal
 
-Finish the Media vertical slice.
-
-### Worker
-
-Extend the existing Cove API Worker.
-
-`POST /api/v1/media` should:
-
-1. Upload the file.
-2. Insert a row in the `media` table.
-
-Fields:
-
-- `id`
-- `entity_type`
-- `entity_id`
-- `media_type`
-- `url`
-- `title`
-- `alt`
-- `sort_order`
-- `is_cover`
-- `created_at`
-
-Add:
-
-`GET /api/v1/media`
-
-Supported query parameters:
-
-- `entityType`
-- `entityId`
-
-Example:
-
-`GET /api/v1/media?entityType=boat&entityId=boat_123`
-
-Returns ordered media.
-
-### Admin
-
-After upload:
-
-- Refresh gallery automatically
-- Display cover photo
-- Display gallery
-- Display videos
-- Allow cover selection
-- Allow drag/drop sort
+Finish the Media vertical slice on the public boat detail page.
 
 ### Public Site
 
-Boat detail page should load media using `GET /api/v1/media` and display:
+Boat detail page should load media using:
+
+```txt
+GET /api/v1/media?entityType=boat&entityId={boat_id}
+```
+
+It should display:
 
 - Cover image
-- Gallery carousel
+- Gallery carousel or simple gallery grid
 - Videos
 
 ## Architectural Rules
@@ -99,6 +74,7 @@ Boat detail page should load media using `GET /api/v1/media` and display:
 - Extend existing endpoints instead of replacing them.
 - Prefer small incremental commits.
 - Keep Worker version numbers updated.
+- Keep `docs/STATUS.md` updated when project state changes.
 
 ## Business Rules
 
