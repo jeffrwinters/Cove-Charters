@@ -8,3 +8,8 @@ GITHUB_REPO = "Cove-Charters"
 GITHUB_BRANCH = "main"
 MAX_UPLOAD_BYTES = "15728640"
 ALLOWED_ORIGINS = "https://jeffrwinters.github.io,https://covecharters.com,https://www.covecharters.com"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "cove-production"
+database_id = "8406eb38-e823-4a82-a405-d101a2a71c4d"
