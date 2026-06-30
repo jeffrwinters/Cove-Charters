@@ -1,0 +1,70 @@
+const SQL = `
+CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, value_type TEXT NOT NULL DEFAULT 'string', description TEXT, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS owners (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT, phone TEXT, payout_notes TEXT, status TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS boats (id TEXT PRIMARY KEY, owner_id TEXT, slug TEXT NOT NULL UNIQUE, name TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft', lifecycle_status TEXT DEFAULT 'draft', booking_enabled INTEGER NOT NULL DEFAULT 0, featured INTEGER NOT NULL DEFAULT 0, home_port TEXT, length_ft REAL, capacity INTEGER, bedrooms INTEGER DEFAULT 0, bathrooms INTEGER DEFAULT 0, make TEXT, model TEXT, boat_type TEXT, short_description TEXT, source_listing_url TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS boat_pricing (id TEXT PRIMARY KEY, boat_id TEXT NOT NULL, plan_name TEXT NOT NULL, duration_hours REAL NOT NULL, base_fee REAL NOT NULL DEFAULT 0, cleaning_fee REAL NOT NULL DEFAULT 75, fuel_deposit REAL NOT NULL DEFAULT 500, tax_rate REAL NOT NULL DEFAULT 0.08225, captain_hourly_rate REAL NOT NULL DEFAULT 125, owner_split REAL NOT NULL DEFAULT 0.85, cove_split REAL NOT NULL DEFAULT 0.15, active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS captains (id TEXT PRIMARY KEY, name TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft', credential TEXT, email TEXT, phone TEXT, bio TEXT, home_port TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS boat_captains (boat_id TEXT NOT NULL, captain_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'approved', notes TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (boat_id, captain_id));
+CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY, first_name TEXT, last_name TEXT, email TEXT, phone TEXT, notes TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS bookings (id TEXT PRIMARY KEY, customer_id TEXT, boat_id TEXT NOT NULL, captain_id TEXT, pricing_id TEXT, status TEXT NOT NULL DEFAULT 'requested', paid_status TEXT NOT NULL DEFAULT 'unpaid', charter_date TEXT, start_time TEXT, duration_hours REAL, base_fee REAL NOT NULL DEFAULT 0, cleaning_fee REAL NOT NULL DEFAULT 0, fuel_deposit REAL NOT NULL DEFAULT 0, tax_rate REAL NOT NULL DEFAULT 0.08225, mileage_rate REAL NOT NULL DEFAULT 14, tax_amount REAL NOT NULL DEFAULT 0, total_collected REAL NOT NULL DEFAULT 0, office_notes TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS trips (id TEXT PRIMARY KEY, booking_id TEXT NOT NULL UNIQUE, status TEXT NOT NULL DEFAULT 'open', start_miles REAL, end_miles REAL, billable_miles REAL, mileage_rate REAL NOT NULL DEFAULT 14, mileage_charge REAL NOT NULL DEFAULT 0, fuel_paid_by TEXT, fuel_amount REAL NOT NULL DEFAULT 0, cleaning_fee_charged INTEGER NOT NULL DEFAULT 0, damage_reported INTEGER NOT NULL DEFAULT 0, damage_notes TEXT, captain_notes TEXT, office_notes TEXT, closed_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS settlements (id TEXT PRIMARY KEY, booking_id TEXT NOT NULL, trip_id TEXT, captain_pay REAL NOT NULL DEFAULT 0, owner_payout REAL NOT NULL DEFAULT 0, cove_commission REAL NOT NULL DEFAULT 0, cleaning_fee REAL NOT NULL DEFAULT 0, tax_collected REAL NOT NULL DEFAULT 0, fuel_deposit REAL NOT NULL DEFAULT 0, fuel_deposit_refund REAL NOT NULL DEFAULT 0, mileage_charge REAL NOT NULL DEFAULT 0, additional_charges REAL NOT NULL DEFAULT 0, owner_paid_status TEXT NOT NULL DEFAULT 'unpaid', captain_paid_status TEXT NOT NULL DEFAULT 'unpaid', customer_paid_status TEXT NOT NULL DEFAULT 'unpaid', office_status TEXT NOT NULL DEFAULT 'draft', notes TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS media (id TEXT PRIMARY KEY, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, media_type TEXT NOT NULL, url TEXT NOT NULL, title TEXT, alt TEXT, sort_order INTEGER NOT NULL DEFAULT 0, is_cover INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE INDEX IF NOT EXISTS idx_bookings_date ON bookings(charter_date);
+CREATE INDEX IF NOT EXISTS idx_media_entity ON media(entity_type, entity_id);
+INSERT OR IGNORE INTO settings (key,value,value_type,description) VALUES ('mileage_rate','14','number','Default billable mileage rate per mile'),('sales_tax_rate','0.08225','number','Default sales tax rate'),('cleaning_fee','75','number','Default cleaning fee'),('fuel_deposit','500','number','Default fuel deposit'),('captain_hourly_rate','125','number','Default captain hourly payout'),('owner_split','0.85','number','Default owner share after captain pay'),('cove_split','0.15','number','Default Cove share after captain pay');
+`;
+
+export default { async fetch(request, env) {
+  const cors = corsHeaders(request, env);
+  if (request.method === 'OPTIONS') return new Response(null, { headers: cors });
+  const path = '/' + new URL(request.url).pathname.split('/').filter(Boolean).join('/').toLowerCase();
+  try {
+    if (request.method === 'GET' && (path === '/health' || path === '/api/v1/health')) return health(env, cors);
+    if (request.method === 'POST' && path === '/api/v1/admin/init-db') return initDb(env, cors);
+    if (path === '/api/v1/settings') return settings(request, env, cors);
+    if (path === '/api/v1/trips/closeout') return closeout(request, env, cors);
+    if (path === '/api/v1/media' || path === '/api/v1/media/upload' || path === '/media/upload' || path === '/upload-media') return upload(request, env, cors);
+    return json({ error: 'Not found', path }, 404, cors);
+  } catch (e) { return json({ error: e.message || String(e) }, 500, cors); }
+}};
+
+async function health(env, cors) {
+  let d1 = false;
+  if (env.DB) d1 = (await env.DB.prepare('SELECT 1 ok').first())?.ok === 1;
+  return json({ ok: true, service: 'cove-api', version: '0.2.0', d1 }, 200, cors);
+}
+async function initDb(env, cors) {
+  db(env);
+  for (const s of SQL.split(';').map(x => x.trim()).filter(Boolean)) await env.DB.prepare(s).run();
+  return json({ ok: true, message: 'D1 schema initialized' }, 200, cors);
+}
+async function settings(request, env, cors) {
+  db(env);
+  if (request.method === 'GET') return json((await env.DB.prepare('SELECT * FROM settings ORDER BY key').all()).results, 200, cors);
+  if (request.method === 'PUT') { const b = await request.json(); await env.DB.prepare('UPDATE settings SET value=?, updated_at=CURRENT_TIMESTAMP WHERE key=?').bind(String(b.value), b.key).run(); return json({ ok: true }, 200, cors); }
+  return json({ error: 'GET or PUT required' }, 405, cors);
+}
+async function closeout(request, env, cors) {
+  db(env); if (request.method !== 'POST') return json({ error: 'POST required' }, 405, cors);
+  const b = await request.json(); const rate = Number(b.mileageRate ?? await setting(env, 'mileage_rate', 14)); const start = Number(b.startMiles || 0); const end = Number(b.endMiles || 0); const miles = Number(b.billableMiles ?? Math.max(0, end - start)); const charge = miles * rate; const id = b.tripId || `trip_${crypto.randomUUID()}`;
+  await env.DB.prepare('INSERT OR REPLACE INTO trips (id,booking_id,status,start_miles,end_miles,billable_miles,mileage_rate,mileage_charge,fuel_paid_by,fuel_amount,cleaning_fee_charged,damage_reported,damage_notes,captain_notes,office_notes,closed_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)').bind(id,b.bookingId,'closed',start,end,miles,rate,charge,b.fuelPaidBy||null,Number(b.fuelAmount||0),b.cleaningFeeCharged?1:0,b.damageReported?1:0,b.damageNotes||null,b.captainNotes||null,b.officeNotes||null).run();
+  return json({ ok: true, tripId: id, billableMiles: miles, mileageRate: rate, mileageCharge: charge }, 200, cors);
+}
+async function setting(env, key, fallback) { const r = await env.DB.prepare('SELECT value,value_type FROM settings WHERE key=?').bind(key).first(); return r ? (r.value_type === 'number' ? Number(r.value) : r.value) : fallback; }
+async function upload(request, env, cors) {
+  if (request.method !== 'POST') return json({ error: 'POST required' }, 405, cors);
+  const form = await request.formData(); const file = form.get('file'); if (!file || typeof file === 'string') return json({ error: 'Missing file field' }, 400, cors);
+  const entityType = clean(form.get('entityType') || 'misc'); const entitySlug = clean(form.get('entitySlug') || 'unsorted'); const mediaType = clean(form.get('mediaType') || 'photos');
+  if (file.size > Number(env.MAX_UPLOAD_BYTES || 15728640)) return json({ error: 'File too large' }, 413, cors);
+  const name = safeFile(file.name || 'upload.bin'); const stamp = new Date().toISOString().replace(/[-:.TZ]/g,'').slice(0,14); const path = `assets/${entityType}/${entitySlug}/${mediaType}/${stamp}-${name}`;
+  const response = await fetch(`https://api.github.com/repos/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/contents/${path}`, { method:'PUT', headers:{ Authorization:`Bearer ${env.GITHUB_TOKEN}`, Accept:'application/vnd.github+json', 'User-Agent':'cove-api' }, body:JSON.stringify({ message:`Upload media: ${path}`, content:base64(await file.arrayBuffer()), branch:env.GITHUB_BRANCH || 'main' }) });
+  if (!response.ok) throw new Error(await response.text());
+  return json({ ok:true, path, url:`/${path}` }, 200, cors);
+}
+function db(env){ if(!env.DB) throw new Error('D1 binding DB is not configured'); }
+function json(v,s=200,h={}){ return new Response(JSON.stringify(v,null,2),{status:s,headers:{...h,'Content-Type':'application/json'}}); }
+function corsHeaders(request, env){ const a=(env.ALLOWED_ORIGINS||'https://jeffrwinters.github.io,https://covecharters.com,https://www.covecharters.com').split(',').map(x=>x.trim()); const o=request.headers.get('Origin')||''; return {'Access-Control-Allow-Origin':a.includes(o)?o:a[0],'Access-Control-Allow-Methods':'GET,POST,PUT,OPTIONS','Access-Control-Allow-Headers':'Content-Type,Authorization'}; }
+function clean(v){ return String(v).toLowerCase().replace(/[^a-z0-9-_]+/g,'-').replace(/^-+|-+$/g,'') || 'item'; }
+function safeFile(v){ const p=String(v).split('.'); const e=p.length>1?p.pop().toLowerCase().replace(/[^a-z0-9]/g,''):'bin'; return `${clean(p.join('.')||'upload')}.${e}`; }
+function base64(buffer){ let b=''; const bytes=new Uint8Array(buffer); for(let i=0;i<bytes.length;i+=0x8000)b+=String.fromCharCode(...bytes.subarray(i,i+0x8000)); return btoa(b); }
