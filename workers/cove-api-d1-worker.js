@@ -22,49 +22,44 @@ export default { async fetch(request, env) {
   try {
     if (request.method === 'GET' && (path === '/health' || path === '/api/v1/health')) return health(env, cors);
     if (request.method === 'POST' && path === '/api/v1/admin/init-db') return initDb(env, cors);
+    if (request.method === 'POST' && path === '/api/v1/admin/import-seed') return importSeed(env, cors);
     if (path === '/api/v1/settings') return settings(request, env, cors);
+    if (path === '/api/v1/boats') return boats(request, env, cors);
+    if (path.startsWith('/api/v1/boats/')) return boatById(request, env, cors, path.split('/').pop());
     if (path === '/api/v1/trips/closeout') return closeout(request, env, cors);
     if (path === '/api/v1/media' || path === '/api/v1/media/upload' || path === '/media/upload' || path === '/upload-media') return upload(request, env, cors);
     return json({ error: 'Not found', path }, 404, cors);
   } catch (e) { return json({ error: e.message || String(e) }, 500, cors); }
 }};
 
-async function health(env, cors) {
-  let d1 = false;
-  if (env.DB) d1 = (await env.DB.prepare('SELECT 1 ok').first())?.ok === 1;
-  return json({ ok: true, service: 'cove-api', version: '0.2.0', d1 }, 200, cors);
-}
-async function initDb(env, cors) {
+async function health(env, cors) { let d1=false; if(env.DB)d1=(await env.DB.prepare('SELECT 1 ok').first())?.ok===1; return json({ ok:true, service:'cove-api', version:'0.3.0', d1 },200,cors); }
+async function initDb(env,cors){ db(env); for(const s of SQL.split(';').map(x=>x.trim()).filter(Boolean)) await env.DB.prepare(s).run(); return json({ok:true,message:'D1 schema initialized'},200,cors); }
+async function settings(request, env, cors){ db(env); if(request.method==='GET')return json((await env.DB.prepare('SELECT * FROM settings ORDER BY key').all()).results,200,cors); if(request.method==='PUT'){const b=await request.json(); await env.DB.prepare('UPDATE settings SET value=?, updated_at=CURRENT_TIMESTAMP WHERE key=?').bind(String(b.value),b.key).run(); return json({ok:true},200,cors)} return json({error:'GET or PUT required'},405,cors); }
+
+async function boats(request, env, cors){
   db(env);
-  for (const s of SQL.split(';').map(x => x.trim()).filter(Boolean)) await env.DB.prepare(s).run();
-  return json({ ok: true, message: 'D1 schema initialized' }, 200, cors);
+  if(request.method==='GET') return json((await env.DB.prepare('SELECT * FROM boats ORDER BY featured DESC, name ASC').all()).results.map(outBoat),200,cors);
+  if(request.method==='POST'){const b=await request.json(); const id=b.id||`boat_${crypto.randomUUID()}`; await upsertBoat(env,{...b,id}); return json({ok:true,id},201,cors)}
+  return json({error:'GET or POST required'},405,cors);
 }
-async function settings(request, env, cors) {
+async function boatById(request, env, cors, id){
   db(env);
-  if (request.method === 'GET') return json((await env.DB.prepare('SELECT * FROM settings ORDER BY key').all()).results, 200, cors);
-  if (request.method === 'PUT') { const b = await request.json(); await env.DB.prepare('UPDATE settings SET value=?, updated_at=CURRENT_TIMESTAMP WHERE key=?').bind(String(b.value), b.key).run(); return json({ ok: true }, 200, cors); }
-  return json({ error: 'GET or PUT required' }, 405, cors);
+  if(request.method==='GET'){const b=await env.DB.prepare('SELECT * FROM boats WHERE id=?').bind(id).first(); return b?json(outBoat(b),200,cors):json({error:'Boat not found'},404,cors)}
+  if(request.method==='PUT'){await upsertBoat(env,{...(await request.json()),id}); return json({ok:true,id},200,cors)}
+  if(request.method==='DELETE'){await env.DB.prepare('DELETE FROM boats WHERE id=?').bind(id).run(); return json({ok:true,id},200,cors)}
+  return json({error:'GET, PUT, or DELETE required'},405,cors);
 }
-async function closeout(request, env, cors) {
-  db(env); if (request.method !== 'POST') return json({ error: 'POST required' }, 405, cors);
-  const b = await request.json(); const rate = Number(b.mileageRate ?? await setting(env, 'mileage_rate', 14)); const start = Number(b.startMiles || 0); const end = Number(b.endMiles || 0); const miles = Number(b.billableMiles ?? Math.max(0, end - start)); const charge = miles * rate; const id = b.tripId || `trip_${crypto.randomUUID()}`;
-  await env.DB.prepare('INSERT OR REPLACE INTO trips (id,booking_id,status,start_miles,end_miles,billable_miles,mileage_rate,mileage_charge,fuel_paid_by,fuel_amount,cleaning_fee_charged,damage_reported,damage_notes,captain_notes,office_notes,closed_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)').bind(id,b.bookingId,'closed',start,end,miles,rate,charge,b.fuelPaidBy||null,Number(b.fuelAmount||0),b.cleaningFeeCharged?1:0,b.damageReported?1:0,b.damageNotes||null,b.captainNotes||null,b.officeNotes||null).run();
-  return json({ ok: true, tripId: id, billableMiles: miles, mileageRate: rate, mileageCharge: charge }, 200, cors);
+async function upsertBoat(env,b){ await env.DB.prepare('INSERT OR REPLACE INTO boats (id,owner_id,slug,name,status,lifecycle_status,booking_enabled,featured,home_port,length_ft,capacity,bedrooms,bathrooms,make,model,boat_type,short_description,source_listing_url,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)').bind(b.id,b.ownerId||null,b.slug,b.name,b.status||'draft',b.lifecycleStatus||'draft',b.bookingEnabled?1:0,b.featured?1:0,b.homePort||null,b.lengthFt||null,b.capacity||null,b.bedrooms||0,b.bathrooms||0,b.make||null,b.model||null,b.type||null,b.shortDescription||null,b.sourceListingUrl||null).run(); }
+function outBoat(r){return {id:r.id,ownerId:r.owner_id,slug:r.slug,name:r.name,status:r.status,lifecycleStatus:r.lifecycle_status,bookingEnabled:!!r.booking_enabled,featured:!!r.featured,homePort:r.home_port,lengthFt:r.length_ft,capacity:r.capacity,bedrooms:r.bedrooms,bathrooms:r.bathrooms,make:r.make,model:r.model,type:r.boat_type,shortDescription:r.short_description,sourceListingUrl:r.source_listing_url};}
+
+async function importSeed(env,cors){
+  db(env); const seed=await githubJson(env,'data/boats.json'); let count=0;
+  for(const b of seed){ await upsertBoat(env,b); await env.DB.prepare('INSERT OR IGNORE INTO boat_pricing (id,boat_id,plan_name,duration_hours,base_fee) VALUES (?,?,?,?,?)').bind(`price_${b.id}_4h`,b.id,'4 hour',4,Number(b.startingPrice||0)).run(); count++; }
+  return json({ok:true,imported:count},200,cors);
 }
-async function setting(env, key, fallback) { const r = await env.DB.prepare('SELECT value,value_type FROM settings WHERE key=?').bind(key).first(); return r ? (r.value_type === 'number' ? Number(r.value) : r.value) : fallback; }
-async function upload(request, env, cors) {
-  if (request.method !== 'POST') return json({ error: 'POST required' }, 405, cors);
-  const form = await request.formData(); const file = form.get('file'); if (!file || typeof file === 'string') return json({ error: 'Missing file field' }, 400, cors);
-  const entityType = clean(form.get('entityType') || 'misc'); const entitySlug = clean(form.get('entitySlug') || 'unsorted'); const mediaType = clean(form.get('mediaType') || 'photos');
-  if (file.size > Number(env.MAX_UPLOAD_BYTES || 15728640)) return json({ error: 'File too large' }, 413, cors);
-  const name = safeFile(file.name || 'upload.bin'); const stamp = new Date().toISOString().replace(/[-:.TZ]/g,'').slice(0,14); const path = `assets/${entityType}/${entitySlug}/${mediaType}/${stamp}-${name}`;
-  const response = await fetch(`https://api.github.com/repos/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/contents/${path}`, { method:'PUT', headers:{ Authorization:`Bearer ${env.GITHUB_TOKEN}`, Accept:'application/vnd.github+json', 'User-Agent':'cove-api' }, body:JSON.stringify({ message:`Upload media: ${path}`, content:base64(await file.arrayBuffer()), branch:env.GITHUB_BRANCH || 'main' }) });
-  if (!response.ok) throw new Error(await response.text());
-  return json({ ok:true, path, url:`/${path}` }, 200, cors);
-}
-function db(env){ if(!env.DB) throw new Error('D1 binding DB is not configured'); }
-function json(v,s=200,h={}){ return new Response(JSON.stringify(v,null,2),{status:s,headers:{...h,'Content-Type':'application/json'}}); }
-function corsHeaders(request, env){ const a=(env.ALLOWED_ORIGINS||'https://jeffrwinters.github.io,https://covecharters.com,https://www.covecharters.com').split(',').map(x=>x.trim()); const o=request.headers.get('Origin')||''; return {'Access-Control-Allow-Origin':a.includes(o)?o:a[0],'Access-Control-Allow-Methods':'GET,POST,PUT,OPTIONS','Access-Control-Allow-Headers':'Content-Type,Authorization'}; }
-function clean(v){ return String(v).toLowerCase().replace(/[^a-z0-9-_]+/g,'-').replace(/^-+|-+$/g,'') || 'item'; }
-function safeFile(v){ const p=String(v).split('.'); const e=p.length>1?p.pop().toLowerCase().replace(/[^a-z0-9]/g,''):'bin'; return `${clean(p.join('.')||'upload')}.${e}`; }
-function base64(buffer){ let b=''; const bytes=new Uint8Array(buffer); for(let i=0;i<bytes.length;i+=0x8000)b+=String.fromCharCode(...bytes.subarray(i,i+0x8000)); return btoa(b); }
+async function githubJson(env,path){const r=await fetch(`https://api.github.com/repos/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/contents/${path}?ref=${env.GITHUB_BRANCH||'main'}`,{headers:gh(env)}); const d=await r.json(); if(!r.ok)throw new Error(d.message||'GitHub read failed'); return JSON.parse(decodeURIComponent(escape(atob(d.content.replace(/\n/g,'')))));}
+
+async function closeout(request, env, cors){ db(env); if(request.method!=='POST')return json({error:'POST required'},405,cors); const b=await request.json(); const rate=Number(b.mileageRate??await setting(env,'mileage_rate',14)); const start=Number(b.startMiles||0); const end=Number(b.endMiles||0); const miles=Number(b.billableMiles??Math.max(0,end-start)); const charge=miles*rate; const id=b.tripId||`trip_${crypto.randomUUID()}`; await env.DB.prepare('INSERT OR REPLACE INTO trips (id,booking_id,status,start_miles,end_miles,billable_miles,mileage_rate,mileage_charge,fuel_paid_by,fuel_amount,cleaning_fee_charged,damage_reported,damage_notes,captain_notes,office_notes,closed_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)').bind(id,b.bookingId,'closed',start,end,miles,rate,charge,b.fuelPaidBy||null,Number(b.fuelAmount||0),b.cleaningFeeCharged?1:0,b.damageReported?1:0,b.damageNotes||null,b.captainNotes||null,b.officeNotes||null).run(); return json({ok:true,tripId:id,billableMiles:miles,mileageRate:rate,mileageCharge:charge},200,cors); }
+async function setting(env,key,fallback){const r=await env.DB.prepare('SELECT value,value_type FROM settings WHERE key=?').bind(key).first(); return r?(r.value_type==='number'?Number(r.value):r.value):fallback;}
+async function upload(request, env, cors){ if(request.method!=='POST')return json({error:'POST required'},405,cors); const form=await request.formData(); const file=form.get('file'); if(!file||typeof file==='string')return json({error:'Missing file field'},400,cors); const entityType=clean(form.get('entityType')||'misc'); const entitySlug=clean(form.get('entitySlug')||'unsorted'); const mediaType=clean(form.get('mediaType')||'photos'); if(file.size>Number(env.MAX_UPLOAD_BYTES||15728640))return json({error:'File too large'},413,cors); const name=safeFile(file.name||'upload.bin'); const stamp=new Date().toISOString().replace(/[-:.TZ]/g,'').slice(0,14); const path=`assets/${entityType}/${entitySlug}/${mediaType}/${stamp}-${name}`; const response=await fetch(`https://api.github.com/repos/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/contents/${path}`,{method:'PUT',headers:gh(env),body:JSON.stringify({message:`Upload media: ${path}`,content:base64(await file.arrayBuffer()),branch:env.GITHUB_BRANCH||'main'})}); if(!response.ok)throw new Error(await response.text()); return json({ok:true,path,url:`/${path}`},200,cors); }
+function db(env){if(!env.DB)throw new Error('D1 binding DB is not configured');} function gh(env){return {Authorization:`Bearer ${env.GITHUB_TOKEN}`,Accept:'application/vnd.github+json','User-Agent':'cove-api'};} function json(v,s=200,h={}){return new Response(JSON.stringify(v,null,2),{status:s,headers:{...h,'Content-Type':'application/json'}});} function corsHeaders(request,env){const a=(env.ALLOWED_ORIGINS||'https://jeffrwinters.github.io,https://covecharters.com,https://www.covecharters.com').split(',').map(x=>x.trim()); const o=request.headers.get('Origin')||''; return {'Access-Control-Allow-Origin':a.includes(o)?o:a[0],'Access-Control-Allow-Methods':'GET,POST,PUT,DELETE,OPTIONS','Access-Control-Allow-Headers':'Content-Type,Authorization'};} function clean(v){return String(v).toLowerCase().replace(/[^a-z0-9-_]+/g,'-').replace(/^-+|-+$/g,'')||'item';} function safeFile(v){const p=String(v).split('.'); const e=p.length>1?p.pop().toLowerCase().replace(/[^a-z0-9]/g,''):'bin'; return `${clean(p.join('.')||'upload')}.${e}`;} function base64(buffer){let b=''; const bytes=new Uint8Array(buffer); for(let i=0;i<bytes.length;i+=0x8000)b+=String.fromCharCode(...bytes.subarray(i,i+0x8000)); return btoa(b);}
