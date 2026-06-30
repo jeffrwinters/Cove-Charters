@@ -1,55 +1,62 @@
 # Cove API Worker Setup
 
-This repo now includes a unified Cloudflare Worker for Cove backend functionality.
+This repo includes a Cloudflare Worker backend for Cove boat records, media uploads, and D1-backed admin workflows.
 
-## Files
+## Active Files
 
-- `workers/cove-api-worker.js` — unified Cove API
-- `workers/media-upload-worker.js` — older media-only worker kept for reference
-- `wrangler.toml` — deploys the unified Cove API Worker
-- `.github/workflows/deploy-worker.yml` — GitHub Actions deployment workflow
+- `workers/cove-api-v3-worker.js` - active Cove API Worker referenced by `wrangler.toml`
+- `wrangler.toml` - Worker deployment config and D1 binding
+- `migrations/0001_initial_cove_schema.sql` - initial D1 schema
+- `.github/workflows/deploy-worker.yml` - GitHub Actions deployment workflow
+- `workers/cove-api-worker.js`, `workers/cove-api-d1-worker.js`, and `workers/media-upload-worker.js` - older/reference Worker versions
 
-## Current endpoints
+## Current Endpoints
 
-```txt
-GET  /health
-POST /media/upload
-POST /upload-media          # backward-compatible alias
-GET  /boats
-PUT  /boats
-GET  /captains
-PUT  /captains
-```
-
-Reserved roadmap endpoints:
+Public reads:
 
 ```txt
-POST /bookings
-POST /agreements
-POST /payments/webhook
-GET  /availability
+GET /health
+GET /api/v1/health
+GET /api/v1/boats
+GET /api/v1/boats/{id-or-slug}
+GET /api/v1/settings
 ```
 
-## GitHub Actions secrets
+Protected writes require `Authorization: Bearer <ADMIN_TOKEN>`:
+
+```txt
+POST   /api/v1/admin/import-seed
+POST   /api/v1/boats
+PUT    /api/v1/boats/{id}
+DELETE /api/v1/boats/{id}
+PUT    /api/v1/settings
+POST   /api/v1/media
+POST   /api/v1/media/upload
+POST   /media/upload
+POST   /upload-media
+```
+
+## GitHub Actions Secrets
 
 Add these repository secrets in GitHub Actions:
 
 - `CLOUDFLARE_API_TOKEN`
 - `CLOUDFLARE_ACCOUNT_ID`
 
-## Worker secret
+## Worker Secrets
 
-The Worker needs a GitHub token so it can read/write JSON and commit uploaded media.
-
-Set it in Cloudflare with Wrangler:
+Set these in Cloudflare with Wrangler:
 
 ```bash
 npx wrangler secret put GITHUB_TOKEN
+npx wrangler secret put ADMIN_TOKEN
 ```
 
-Use a GitHub fine-grained token scoped to this repository with contents read/write permission.
+`GITHUB_TOKEN` should be a GitHub fine-grained token scoped to this repository with contents read/write permission. It is used only for GitHub-backed media uploads.
 
-## Worker variables
+`ADMIN_TOKEN` protects all write, upload, and seed-import endpoints. Store the same value in the Cove Admin page token field when making edits from `admin.html`.
+
+## Worker Variables
 
 These are in `wrangler.toml`:
 
@@ -61,21 +68,23 @@ MAX_UPLOAD_BYTES = "15728640"
 ALLOWED_ORIGINS = "https://jeffrwinters.github.io,https://covecharters.com,https://www.covecharters.com"
 ```
 
+The D1 binding is also configured in `wrangler.toml`:
+
+```toml
+[[d1_databases]]
+binding = "DB"
+database_name = "cove-production"
+```
+
 ## API URL
 
-After deployment, the Worker URL will look like:
+The current public Worker URL used by the static pages is:
 
 ```txt
-https://cove-api.<your-cloudflare-subdomain>.workers.dev
+https://cove-api.jeff-r-winters.workers.dev
 ```
 
-Use this upload endpoint in the Cove Admin dashboard:
-
-```txt
-https://cove-api.<your-cloudflare-subdomain>.workers.dev/media/upload
-```
-
-## Storage paths
+## Media Storage Paths
 
 Uploaded files are committed to:
 
@@ -85,4 +94,4 @@ assets/boats/{boat-slug}/videos/
 assets/captains/{captain-name}/photos/
 ```
 
-GitHub Pages will host them from the repository site.
+GitHub Pages hosts those files from the repository site after the commit lands.
