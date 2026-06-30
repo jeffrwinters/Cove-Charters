@@ -18,7 +18,7 @@ The active Worker file is:
 workers/cove-api-v3-worker.js
 ```
 
-The current API version is `0.3.10` after the media URL fix.
+The current API version is `0.3.11` after the first Captains API slice.
 
 ## Working End To End
 
@@ -58,9 +58,24 @@ Recently proven/fixed:
 - Existing media URLs were migrated from GitHub Pages URLs to raw GitHub URLs.
 - Hose Monkey uploaded photos return `200 image/jpeg` from their stored URLs.
 
+### Captains Slice
+
+Completed so far:
+
+- `GET /api/v1/captains` returns captain records from D1.
+- `POST /api/v1/captains` creates a captain record.
+- `GET /api/v1/captains/{id}` returns one captain record.
+- `PUT /api/v1/captains/{id}` updates a captain record.
+- `DELETE /api/v1/captains/{id}` deletes a captain and its boat approvals.
+- `GET /api/v1/boats/{boat_id}/captains` returns approved captains for a boat.
+- `PUT /api/v1/boats/{boat_id}/captains` replaces the approved captain list for a boat.
+- Boat API responses now include `approvedCaptainIds` from D1.
+- Admin Command Center has a Captains tab for CRUD.
+- Admin boat detail has an Approved captains panel for assigning captains to boats.
+
 ## Current Roadmap
 
-1. Captains vertical slice.
+1. Finish Captains public selection surface.
 2. Availability vertical slice.
 3. Booking engine.
 4. Charter agreements.

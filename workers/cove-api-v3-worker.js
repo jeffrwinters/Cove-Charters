@@ -13,7 +13,10 @@ export default {
         return await importSeed(env, cors);
       }
       if (path === '/api/v1/boats') return await boats(request, env, cors);
+      if (path.match(/^\/api\/v1\/boats\/[^/]+\/captains$/)) return await boatCaptains(request, env, cors, path.split('/')[4]);
       if (path.startsWith('/api/v1/boats/')) return await boatById(request, env, cors, path.split('/').pop());
+      if (path === '/api/v1/captains') return await captains(request, env, cors);
+      if (path.startsWith('/api/v1/captains/')) return await captainById(request, env, cors, path.split('/').pop());
       if (path === '/api/v1/settings') return await settings(request, env, cors);
       if (path === '/api/v1/media') return await media(request, env, cors);
       if (path.startsWith('/api/v1/media/')) return await mediaById(request, env, cors, path.split('/').pop());
@@ -28,7 +31,7 @@ export default {
 async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
-  return json({ ok: true, service: 'cove-api', version: '0.3.10', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN) }, 200, cors);
+  return json({ ok: true, service: 'cove-api', version: '0.3.11', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN) }, 200, cors);
 }
 
 async function settings(request, env, cors) {
@@ -53,7 +56,8 @@ async function boats(request, env, cors) {
     const rows = await env.DB.prepare(`
       SELECT b.*,
         (SELECT base_fee FROM boat_pricing WHERE boat_id = b.id AND active = 1 ORDER BY duration_hours LIMIT 1) AS starting_price,
-        (SELECT plan_name FROM boat_pricing WHERE boat_id = b.id AND active = 1 ORDER BY duration_hours LIMIT 1) AS price_unit
+        (SELECT plan_name FROM boat_pricing WHERE boat_id = b.id AND active = 1 ORDER BY duration_hours LIMIT 1) AS price_unit,
+        (SELECT GROUP_CONCAT(captain_id) FROM boat_captains WHERE boat_id = b.id AND status = 'approved') AS approved_captain_ids
       FROM boats b
       ORDER BY featured DESC, name ASC
     `).all();
@@ -76,7 +80,8 @@ async function boatById(request, env, cors, id) {
     const row = await env.DB.prepare(`
       SELECT b.*,
         (SELECT base_fee FROM boat_pricing WHERE boat_id = b.id AND active = 1 ORDER BY duration_hours LIMIT 1) AS starting_price,
-        (SELECT plan_name FROM boat_pricing WHERE boat_id = b.id AND active = 1 ORDER BY duration_hours LIMIT 1) AS price_unit
+        (SELECT plan_name FROM boat_pricing WHERE boat_id = b.id AND active = 1 ORDER BY duration_hours LIMIT 1) AS price_unit,
+        (SELECT GROUP_CONCAT(captain_id) FROM boat_captains WHERE boat_id = b.id AND status = 'approved') AS approved_captain_ids
       FROM boats b
       WHERE b.id = ? OR b.slug = ?
     `).bind(id, id).first();
@@ -173,9 +178,122 @@ function outBoat(row) {
     priceUnit: row.price_unit || 'charter',
     detailUrl: `boat.html?boat=${encodeURIComponent(row.slug || row.id)}`,
     media: { photos: [], videos: [] },
-    approvedCaptainIds: []
+    approvedCaptainIds: row.approved_captain_ids ? String(row.approved_captain_ids).split(',').filter(Boolean) : []
   };
   return { ...boat, ...marketingFields(boat) };
+}
+
+async function captains(request, env, cors) {
+  requireDb(env);
+  if (request.method === 'GET') {
+    const rows = await env.DB.prepare(`
+      SELECT c.*,
+        (SELECT COUNT(*) FROM boat_captains bc WHERE bc.captain_id = c.id AND bc.status = 'approved') AS approved_boat_count
+      FROM captains c
+      ORDER BY status = 'active' DESC, name ASC
+    `).all();
+    return json((rows.results || []).map(outCaptain), 200, cors);
+  }
+  if (request.method === 'POST') {
+    const auth = requireAdmin(request, env);
+    if (auth) return json(auth.body, auth.status, cors);
+    const captain = await request.json();
+    const id = captain.id || `captain_${crypto.randomUUID()}`;
+    await upsertCaptain(env, { ...captain, id });
+    return json({ ok: true, id }, 201, cors);
+  }
+  return json({ error: 'GET or POST required' }, 405, cors);
+}
+
+async function captainById(request, env, cors, id) {
+  requireDb(env);
+  if (request.method === 'GET') {
+    const row = await env.DB.prepare(`
+      SELECT c.*,
+        (SELECT COUNT(*) FROM boat_captains bc WHERE bc.captain_id = c.id AND bc.status = 'approved') AS approved_boat_count
+      FROM captains c
+      WHERE c.id = ?
+    `).bind(id).first();
+    return row ? json(outCaptain(row), 200, cors) : json({ error: 'Captain not found' }, 404, cors);
+  }
+  if (request.method === 'PUT') {
+    const auth = requireAdmin(request, env);
+    if (auth) return json(auth.body, auth.status, cors);
+    const captain = await request.json();
+    await upsertCaptain(env, { ...captain, id });
+    return json({ ok: true, id }, 200, cors);
+  }
+  if (request.method === 'DELETE') {
+    const auth = requireAdmin(request, env);
+    if (auth) return json(auth.body, auth.status, cors);
+    await env.DB.prepare('DELETE FROM boat_captains WHERE captain_id = ?').bind(id).run();
+    await env.DB.prepare('DELETE FROM captains WHERE id = ?').bind(id).run();
+    return json({ ok: true, id }, 200, cors);
+  }
+  return json({ error: 'GET, PUT, or DELETE required' }, 405, cors);
+}
+
+async function boatCaptains(request, env, cors, boatId) {
+  requireDb(env);
+  if (request.method === 'GET') {
+    const rows = await env.DB.prepare(`
+      SELECT c.*, bc.status AS approval_status, bc.notes AS approval_notes
+      FROM captains c
+      INNER JOIN boat_captains bc ON bc.captain_id = c.id
+      WHERE bc.boat_id = ? AND bc.status = 'approved'
+      ORDER BY c.name ASC
+    `).bind(boatId).all();
+    return json((rows.results || []).map(outCaptain), 200, cors);
+  }
+  if (request.method === 'PUT') {
+    const auth = requireAdmin(request, env);
+    if (auth) return json(auth.body, auth.status, cors);
+    const body = await request.json();
+    const captainIds = unique(Array.isArray(body.captainIds) ? body.captainIds.map(String) : []);
+    await env.DB.prepare('DELETE FROM boat_captains WHERE boat_id = ?').bind(boatId).run();
+    for (const captainId of captainIds) {
+      await env.DB.prepare('INSERT OR REPLACE INTO boat_captains (boat_id, captain_id, status, notes) VALUES (?, ?, ?, ?)')
+        .bind(boatId, captainId, 'approved', null)
+        .run();
+    }
+    return json({ ok: true, boatId, captainIds }, 200, cors);
+  }
+  return json({ error: 'GET or PUT required' }, 405, cors);
+}
+
+async function upsertCaptain(env, captain) {
+  await env.DB.prepare(`
+    INSERT OR REPLACE INTO captains (
+      id, name, status, credential, email, phone, bio, home_port, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+  `).bind(
+    captain.id,
+    captain.name || 'New Captain',
+    captain.status || 'draft',
+    captain.credential || null,
+    captain.email || null,
+    captain.phone || null,
+    captain.bio || null,
+    captain.homePort || captain.home_port || null
+  ).run();
+}
+
+function outCaptain(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    status: row.status,
+    credential: row.credential,
+    email: row.email,
+    phone: row.phone,
+    bio: row.bio,
+    homePort: row.home_port,
+    approvedBoatCount: Number(row.approved_boat_count || 0),
+    approvalStatus: row.approval_status,
+    approvalNotes: row.approval_notes,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
 }
 
 function marketingFields(boat) {

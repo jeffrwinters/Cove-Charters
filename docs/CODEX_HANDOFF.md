@@ -53,7 +53,7 @@ Recently proven/fixed:
 
 ## Immediate Goal
 
-Move to the Captains vertical slice.
+Finish the Captains public selection surface. The first Captains API/admin slice is in place.
 
 ## Architectural Rules
 
