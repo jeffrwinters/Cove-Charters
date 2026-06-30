@@ -18,7 +18,7 @@ The active Worker file is:
 workers/cove-api-v3-worker.js
 ```
 
-The current API version is `0.3.11` after the first Captains API slice.
+The current API version is `0.3.12` after adding cover photos to boat list responses.
 
 ## Working End To End
 
@@ -51,6 +51,7 @@ Completed so far:
 - Public `boat.html` loads media for the selected boat.
 - Public boat detail renders a cover-driven hero, gallery carousel, thumbnail strip, and videos when media exists.
 - Public boat detail gracefully shows an empty media state when no media has been uploaded.
+- Public homepage fleet cards use each boat's uploaded cover photo when available.
 
 Recently proven/fixed:
 
