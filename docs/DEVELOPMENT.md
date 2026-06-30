@@ -8,14 +8,18 @@
 - Keep the Worker version number updated when API behavior changes.
 - Keep public GET endpoints stable where possible.
 - Keep admin writes explicit and easy to reason about.
+- Keep `docs/STATUS.md` updated whenever project state changes.
+- Update the relevant docs file when architecture, business rules, API behavior, or workflow changes.
 
 ## Source of Truth
 
 D1 is the source of truth for migrated domains.
 
-Current migrated domain:
+Current migrated domains:
 
 - Boats
+- Boat pricing
+- Media metadata
 
 JSON files may remain as fallbacks, fixtures, or seed data, but they should not be treated as authoritative once a domain has moved to D1.
 
@@ -43,6 +47,7 @@ Do not build large unrelated features before the current slice works end-to-end.
 - Return useful JSON errors.
 - Avoid generic Worker 1101 errors by awaiting async handlers inside try/catch blocks.
 - Validate input enough to avoid corrupt records.
+- Use bearer-token auth for protected admin writes.
 
 ## Database Guidance
 
@@ -50,9 +55,10 @@ Do not build large unrelated features before the current slice works end-to-end.
 - Snapshot financial settings onto booking records.
 - Avoid destructive schema changes.
 - Use indexes for lookup-heavy endpoints.
+- Store media metadata in D1, not only as uploaded files.
 
 ## Before Production
 
-Add authentication/authorization for admin write endpoints.
+Replace the bootstrap `ADMIN_TOKEN` pattern with user-aware authentication and authorization.
 
 Public reads can remain public where appropriate.
