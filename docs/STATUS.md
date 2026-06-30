@@ -18,7 +18,7 @@ The active Worker file is:
 workers/cove-api-v3-worker.js
 ```
 
-The current API version is `0.3.17` after switching booking email delivery to Resend.
+The current API version is `0.3.18` after adding the protected captain trip packet endpoint.
 
 ## Working End To End
 
@@ -92,6 +92,7 @@ Completed so far:
 - Admin booking cards include quick actions for Confirm, Needs Follow-up, and Decline. These update status, stamp office notes, and copy customer-ready text where applicable.
 - Admin confirmed/completed booking cards include Send Confirmation. It calls `POST /api/v1/bookings/{id}/send-confirmation`; if Resend email sending is not configured, the admin falls back to copying the confirmation text.
 - Booking emails use Resend REST API when `RESEND_API_KEY` and `BOOKING_NOTIFY_FROM` are configured.
+- Admin confirmed/completed bookings with an assigned captain include Copy Captain Packet and Send Captain Packet. The send action calls `POST /api/v1/bookings/{id}/send-captain-packet` and requires the assigned captain to have an email address.
 - Current MVP email sender uses the temporary `lakefrontatloto.com` domain. Revisit this configuration after Cove controls `covecharters.com`; likely target is `BOOKING_NOTIFY_FROM=bookings@covecharters.com` with replies routed to the back-office inbox.
 - Agreement handling is intentionally back-office only after confirmation: customer booking requests stay lightweight, while confirmed/completed admin booking cards can track agreement status and copy an agreement packet checklist.
 - Admin Bookings has filters for status, boat, captain, date range, and text search.
@@ -115,7 +116,7 @@ Completed so far:
 
 ## Current Roadmap
 
-1. Captain availability guidance and captain trip packet workflow.
+1. Add a cleaner captain-facing trip view / future captain app foundation.
 2. Configure Resend sender domain/API key for live booking alerts and customer confirmations.
 3. Turn the agreement packet workflow into real document/e-sign storage.
 4. Trip closeout.

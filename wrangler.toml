@@ -8,6 +8,11 @@ GITHUB_REPO = "Cove-Charters"
 GITHUB_BRANCH = "main"
 MAX_UPLOAD_BYTES = "15728640"
 ALLOWED_ORIGINS = "https://jeffrwinters.github.io,https://covecharters.com,https://www.covecharters.com"
+ADMIN_URL = "https://jeffrwinters.github.io/Cove-Charters/admin.html"
+BOOKING_NOTIFY_FROM = "jeff@lakefrontatloto.com"
+BOOKING_NOTIFY_FROM_NAME = "Cove Charters"
+BOOKING_NOTIFY_TO = "jeff.r.winters@gmail.com"
+BOOKING_REPLY_TO = "jeff.r.winters@gmail.com"
 
 [[d1_databases]]
 binding = "DB"

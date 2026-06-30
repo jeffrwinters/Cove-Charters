@@ -21,6 +21,7 @@ export default {
       if (path.startsWith('/api/v1/availability/')) return await availabilityById(request, env, cors, path.split('/').pop());
       if (path === '/api/v1/bookings') return await bookings(request, env, cors, ctx);
       if (path.match(/^\/api\/v1\/bookings\/[^/]+\/send-confirmation$/)) return await sendBookingConfirmation(request, env, cors, path.split('/')[4]);
+      if (path.match(/^\/api\/v1\/bookings\/[^/]+\/send-captain-packet$/)) return await sendCaptainPacket(request, env, cors, path.split('/')[4]);
       if (path.startsWith('/api/v1/bookings/')) return await bookingById(request, env, cors, path.split('/').pop());
       if (path === '/api/v1/settings') return await settings(request, env, cors);
       if (path === '/api/v1/media') return await media(request, env, cors);
@@ -37,7 +38,7 @@ async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
   const resendConfigured = Boolean(env.RESEND_API_KEY && env.BOOKING_NOTIFY_FROM);
-  return json({ ok: true, service: 'cove-api', version: '0.3.17', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
+  return json({ ok: true, service: 'cove-api', version: '0.3.18', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
 }
 
 async function settings(request, env, cors) {
@@ -545,9 +546,36 @@ async function sendBookingConfirmation(request, env, cors, id) {
   return json({ ok: true, sent: true, result }, 200, cors);
 }
 
+async function sendCaptainPacket(request, env, cors, id) {
+  requireDb(env);
+  const auth = requireAdmin(request, env);
+  if (auth) return json(auth.body, auth.status, cors);
+  if (request.method !== 'POST') return json({ error: 'POST required' }, 405, cors);
+
+  const row = await env.DB.prepare(bookingSelectSql('WHERE bk.id = ?')).bind(id).first();
+  if (!row) return json({ error: 'Booking not found' }, 404, cors);
+  const booking = outBooking(row);
+  if (!booking.captainId) return json({ error: 'Booking does not have an assigned captain' }, 400, cors);
+  if (!booking.captainEmail) return json({ error: 'Assigned captain does not have an email address' }, 400, cors);
+  if (!env.RESEND_API_KEY || !env.BOOKING_NOTIFY_FROM) {
+    return json({ ok: false, sent: false, configured: false, provider: 'resend', error: 'Captain email is not configured' }, 501, cors);
+  }
+
+  const result = await sendCaptainTripPacket(env, booking);
+  const note = `[${new Date().toLocaleString('en-US', { timeZone: 'America/Chicago' })}] Captain packet sent to ${booking.captainName || booking.captainEmail}`;
+  await env.DB.prepare(`
+    UPDATE bookings
+    SET office_notes = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).bind([booking.officeNotes, note].filter(Boolean).join('\n'), id).run();
+
+  return json({ ok: true, sent: true, result }, 200, cors);
+}
+
 function bookingSelectSql(suffix = '') {
   return `
     SELECT bk.*, b.name AS boat_name, b.slug AS boat_slug, c.name AS captain_name,
+      c.email AS captain_email, c.phone AS captain_phone,
       cu.first_name, cu.last_name, cu.email, cu.phone, cu.notes AS customer_notes
     FROM bookings bk
     LEFT JOIN boats b ON b.id = bk.boat_id
@@ -570,6 +598,8 @@ function outBooking(row) {
     boatSlug: row.boat_slug,
     captainId: row.captain_id,
     captainName: row.captain_name,
+    captainEmail: row.captain_email,
+    captainPhone: row.captain_phone,
     pricingId: row.pricing_id,
     status: row.status,
     paidStatus: row.paid_status,
@@ -657,6 +687,29 @@ async function sendCustomerConfirmation(env, booking) {
   });
 }
 
+async function sendCaptainTripPacket(env, booking) {
+  const subject = `Cove captain packet: ${booking.boatName || booking.boatId} on ${booking.charterDate || 'date TBD'}`;
+  const lines = captainPacketLines(booking);
+  const html = `
+    <h2>Cove captain trip packet</h2>
+    <p>Hi ${escapeHtml(booking.captainName || 'Captain')},</p>
+    <p>This confirmed charter is assigned to you.</p>
+    <p><strong>Boat:</strong> ${escapeHtml(booking.boatName || booking.boatId)}<br><strong>Date:</strong> ${escapeHtml(booking.charterDate || 'TBD')}<br><strong>Start:</strong> ${escapeHtml(booking.startTime || 'TBD')}<br><strong>Duration:</strong> ${escapeHtml(booking.durationHours || 'TBD')} hours</p>
+    <h3>Customer</h3>
+    <p>${escapeHtml(booking.customerName || 'Guest')}<br>${escapeHtml(booking.phone || 'No phone')}<br>${escapeHtml(booking.email || 'No email')}</p>
+    <h3>Notes</h3>
+    <p>${escapeHtml(booking.customerNotes || 'None')}</p>
+    <p>Back office will send updates if agreement, payment, weather, or schedule details change.</p>
+  `;
+  return await sendResendEmail(env, {
+    to: booking.captainEmail,
+    reply_to: env.BOOKING_REPLY_TO || env.BOOKING_NOTIFY_FROM,
+    subject,
+    text: lines.join('\n'),
+    html
+  });
+}
+
 async function sendResendEmail(env, message) {
   const fromName = env.BOOKING_NOTIFY_FROM_NAME || 'Cove Charters';
   const response = await fetch('https://api.resend.com/emails', {
@@ -691,6 +744,29 @@ function customerConfirmationLines(booking) {
     `Our back office will follow up with the remaining agreement and payment details.`,
     ``,
     `Please reply with any questions or changes.`
+  ];
+}
+
+function captainPacketLines(booking) {
+  return [
+    `Hi ${booking.captainName || 'Captain'},`,
+    ``,
+    `This confirmed Cove charter is assigned to you.`,
+    ``,
+    `Booking: ${booking.id}`,
+    `Boat: ${booking.boatName || booking.boatId}`,
+    `Date: ${booking.charterDate || 'TBD'}`,
+    `Start time: ${booking.startTime || 'TBD'}`,
+    `Duration: ${booking.durationHours || 'TBD'} hours`,
+    ``,
+    `Customer: ${booking.customerName || 'Guest'}`,
+    `Customer phone: ${booking.phone || 'Not provided'}`,
+    `Customer email: ${booking.email || 'Not provided'}`,
+    ``,
+    `Customer notes: ${booking.customerNotes || 'None'}`,
+    `Office notes: ${booking.officeNotes || 'None'}`,
+    ``,
+    `Back office will send updates if agreement, payment, weather, or schedule details change.`
   ];
 }
 
