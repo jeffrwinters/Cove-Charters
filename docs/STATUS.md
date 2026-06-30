@@ -74,6 +74,7 @@ Completed so far:
 - Boat API responses now include `approvedCaptainIds` from D1.
 - Admin Command Center has a Captains tab for CRUD.
 - Admin boat detail has an Approved captains panel for assigning captains to boats.
+- Admin captain profiles have an Approved boats panel for managing the same boat/captain approval relationship from the captain side.
 
 ### Booking Requests Slice
 
