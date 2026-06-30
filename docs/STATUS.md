@@ -52,6 +52,7 @@ Completed so far:
 - Public boat detail renders a cover-driven hero, gallery carousel, thumbnail strip, and videos when media exists.
 - Public boat detail gracefully shows an empty media state when no media has been uploaded.
 - Public homepage fleet cards use each boat's uploaded cover photo when available.
+- Public homepage and boat detail pages include baseline SEO metadata, canonical URLs, Open Graph tags, and lightweight structured data.
 
 Recently proven/fixed:
 
@@ -86,6 +87,7 @@ Completed so far:
 - Public `boat.html` has a Request this charter form.
 - Public `boat.html` checks selected boat/date/time against availability blocks and shows a non-blocking availability message.
 - Public booking requests append the availability guidance shown to the customer into customer notes for back-office context.
+- Public booking request form now sets clearer expectations: no payment due today, Cove confirms boat/captain/agreement/payment details, and customers should watch email after submission.
 - Admin Command Center has a Bookings inbox with status updates.
 - Admin booking cards now work as a small operations workbench: status, assigned captain, date, start time, duration, and office notes are editable in place.
 - Admin booking cards include copy-ready internal summaries plus confirmation and decline customer reply drafts.
