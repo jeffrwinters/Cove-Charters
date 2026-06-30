@@ -94,6 +94,29 @@ binding = "DB"
 database_name = "cove-production"
 ```
 
+## Booking Email Notifications
+
+Booking requests save successfully even when email is not configured. To enable email alerts, Cloudflare Email Sending must be enabled for the sending domain and the Worker must have an email binding.
+
+Expected Worker binding:
+
+```toml
+send_email = [
+  { name = "EMAIL" }
+]
+```
+
+Expected Worker variables:
+
+```toml
+BOOKING_NOTIFY_TO = "ops@example.com"
+BOOKING_NOTIFY_FROM = "bookings@yourdomain.com"
+BOOKING_NOTIFY_FROM_NAME = "Cove Charters"
+ADMIN_URL = "https://jeffrwinters.github.io/Cove-Charters/admin.html"
+```
+
+`BOOKING_NOTIFY_FROM` must use a domain onboarded in Cloudflare Email Sending. `/api/v1/health` reports `bookingEmail: true` when the binding and required variables are present.
+
 ## API URL
 
 The current public Worker URL used by the static pages is:

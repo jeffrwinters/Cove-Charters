@@ -18,7 +18,7 @@ The active Worker file is:
 workers/cove-api-v3-worker.js
 ```
 
-The current API version is `0.3.13` after the first Booking Requests slice.
+The current API version is `0.3.14` after adding optional booking email notifications.
 
 ## Working End To End
 
@@ -85,10 +85,11 @@ Completed so far:
 - `DELETE /api/v1/bookings/{id}` deletes a booking request.
 - Public `boat.html` has a Request this charter form.
 - Admin Command Center has a Bookings inbox with status updates.
+- Booking requests attempt an email notification when the Cloudflare Email Sending binding and notification variables are configured.
 
 ## Current Roadmap
 
-1. Add booking notification/email or export workflow.
+1. Configure Cloudflare Email Sending binding/variables for live booking alerts.
 2. Availability vertical slice.
 3. Charter agreements.
 4. Trip closeout.

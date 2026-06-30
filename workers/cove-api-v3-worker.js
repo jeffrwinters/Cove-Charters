@@ -1,5 +1,5 @@
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const cors = corsHeaders(request, env);
     if (request.method === 'OPTIONS') return new Response(null, { headers: cors });
 
@@ -17,7 +17,7 @@ export default {
       if (path.startsWith('/api/v1/boats/')) return await boatById(request, env, cors, path.split('/').pop());
       if (path === '/api/v1/captains') return await captains(request, env, cors);
       if (path.startsWith('/api/v1/captains/')) return await captainById(request, env, cors, path.split('/').pop());
-      if (path === '/api/v1/bookings') return await bookings(request, env, cors);
+      if (path === '/api/v1/bookings') return await bookings(request, env, cors, ctx);
       if (path.startsWith('/api/v1/bookings/')) return await bookingById(request, env, cors, path.split('/').pop());
       if (path === '/api/v1/settings') return await settings(request, env, cors);
       if (path === '/api/v1/media') return await media(request, env, cors);
@@ -33,7 +33,7 @@ export default {
 async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
-  return json({ ok: true, service: 'cove-api', version: '0.3.13', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN) }, 200, cors);
+  return json({ ok: true, service: 'cove-api', version: '0.3.14', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(env.EMAIL && env.BOOKING_NOTIFY_TO && env.BOOKING_NOTIFY_FROM) }, 200, cors);
 }
 
 async function settings(request, env, cors) {
@@ -318,7 +318,7 @@ function outCaptain(row) {
   };
 }
 
-async function bookings(request, env, cors) {
+async function bookings(request, env, cors, ctx) {
   requireDb(env);
   if (request.method === 'GET') {
     const rows = await env.DB.prepare(bookingSelectSql('ORDER BY bk.created_at DESC')).all();
@@ -371,7 +371,10 @@ async function bookings(request, env, cors) {
     ).run();
 
     const row = await env.DB.prepare(bookingSelectSql('WHERE bk.id = ?')).bind(bookingId).first();
-    return json({ ok: true, id: bookingId, booking: outBooking(row) }, 201, cors);
+    const booking = outBooking(row);
+    const emailTask = sendBookingNotification(env, booking).catch(error => console.error('Booking notification failed', error));
+    if (ctx?.waitUntil) ctx.waitUntil(emailTask); else await emailTask;
+    return json({ ok: true, id: bookingId, booking }, 201, cors);
   }
   return json({ error: 'GET or POST required' }, 405, cors);
 }
@@ -466,6 +469,52 @@ function splitName(fullName, firstName, lastName) {
   const parts = String(fullName || '').trim().split(/\s+/).filter(Boolean);
   if (parts.length <= 1) return { firstName: parts[0] || '', lastName: '' };
   return { firstName: parts.slice(0, -1).join(' '), lastName: parts.at(-1) };
+}
+
+async function sendBookingNotification(env, booking) {
+  if (!env.EMAIL || !env.BOOKING_NOTIFY_TO || !env.BOOKING_NOTIFY_FROM) return null;
+  const adminUrl = env.ADMIN_URL || 'https://jeffrwinters.github.io/Cove-Charters/admin.html';
+  const subject = `New Cove booking request: ${booking.boatName || booking.boatId}`;
+  const lines = [
+    `New booking request ${booking.id}`,
+    ``,
+    `Customer: ${booking.customerName || 'Guest'}`,
+    `Email: ${booking.email || 'Not provided'}`,
+    `Phone: ${booking.phone || 'Not provided'}`,
+    ``,
+    `Boat: ${booking.boatName || booking.boatId}`,
+    `Captain: ${booking.captainName || 'Not selected'}`,
+    `Date: ${booking.charterDate || 'TBD'}`,
+    `Start time: ${booking.startTime || 'TBD'}`,
+    `Duration: ${booking.durationHours || 'TBD'} hours`,
+    ``,
+    `Notes: ${booking.customerNotes || booking.officeNotes || 'None'}`,
+    ``,
+    `Admin: ${adminUrl}`
+  ];
+  const html = `
+    <h2>New Cove booking request</h2>
+    <p><strong>Reference:</strong> ${escapeHtml(booking.id)}</p>
+    <h3>Customer</h3>
+    <p>${escapeHtml(booking.customerName || 'Guest')}<br>${escapeHtml(booking.email || 'No email')}<br>${escapeHtml(booking.phone || 'No phone')}</p>
+    <h3>Charter</h3>
+    <p><strong>Boat:</strong> ${escapeHtml(booking.boatName || booking.boatId)}<br><strong>Captain:</strong> ${escapeHtml(booking.captainName || 'Not selected')}<br><strong>Date:</strong> ${escapeHtml(booking.charterDate || 'TBD')}<br><strong>Start:</strong> ${escapeHtml(booking.startTime || 'TBD')}<br><strong>Duration:</strong> ${escapeHtml(booking.durationHours || 'TBD')} hours</p>
+    <h3>Notes</h3>
+    <p>${escapeHtml(booking.customerNotes || booking.officeNotes || 'None')}</p>
+    <p><a href="${escapeHtml(adminUrl)}">Open Cove Admin</a></p>
+  `;
+  return await env.EMAIL.send({
+    to: env.BOOKING_NOTIFY_TO.split(',').map(item => item.trim()).filter(Boolean),
+    from: { email: env.BOOKING_NOTIFY_FROM, name: env.BOOKING_NOTIFY_FROM_NAME || 'Cove Charters' },
+    replyTo: booking.email || undefined,
+    subject,
+    text: lines.join('\n'),
+    html
+  });
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 }
 
 function marketingFields(boat) {
