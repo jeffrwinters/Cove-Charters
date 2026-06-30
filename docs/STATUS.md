@@ -89,6 +89,7 @@ Completed so far:
 - Admin Command Center has a Bookings inbox with status updates.
 - Admin booking cards now work as a small operations workbench: status, assigned captain, date, start time, duration, and office notes are editable in place.
 - Admin booking cards include copy-ready internal summaries plus confirmation and decline customer reply drafts.
+- Admin booking cards include quick actions for Confirm, Needs Follow-up, and Decline. These update status, stamp office notes, and copy customer-ready text where applicable.
 - Admin Bookings has filters for status, boat, captain, date range, and text search.
 - Admin Bookings includes a master month calendar for dated booking requests; calendar entries respect the same status, boat, captain, date, and search filters.
 - Booking statuses for admin operations are `requested`, `reviewing`, `confirmed`, `completed`, `declined`, and `cancelled`.
