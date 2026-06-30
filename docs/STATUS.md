@@ -88,6 +88,7 @@ Completed so far:
 - `DELETE /api/v1/bookings/{id}` deletes a booking request.
 - Public `boat.html` has a Request this charter form.
 - Public `boat.html` checks selected boat/date/time against availability blocks and shows a non-blocking availability message.
+- Public and admin time inputs are constrained and snapped to 30-minute increments.
 - Public booking requests append the availability guidance shown to the customer into customer notes for back-office context.
 - Public booking request form now sets clearer expectations: no payment due today, Cove confirms boat/captain/agreement/payment details, and customers should watch email after submission.
 - Admin Command Center has a Bookings inbox with status updates.
