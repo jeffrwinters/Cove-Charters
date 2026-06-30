@@ -20,6 +20,22 @@ GET /api/v1/health
 GET /api/v1/boats
 GET /api/v1/boats/{id-or-slug}
 GET /api/v1/settings
+GET /api/v1/media
+GET /api/v1/media/{id}
+```
+
+`GET /api/v1/media` supports these optional filters:
+
+```txt
+entityType
+entityId
+mediaType
+```
+
+Example:
+
+```txt
+GET /api/v1/media?entityType=boat&entityId=boat_123
 ```
 
 Protected writes require `Authorization: Bearer <ADMIN_TOKEN>`:
@@ -31,6 +47,8 @@ PUT    /api/v1/boats/{id}
 DELETE /api/v1/boats/{id}
 PUT    /api/v1/settings
 POST   /api/v1/media
+PUT    /api/v1/media/{id}
+DELETE /api/v1/media/{id}
 POST   /api/v1/media/upload
 POST   /media/upload
 POST   /upload-media
@@ -95,3 +113,5 @@ assets/captains/{captain-name}/photos/
 ```
 
 GitHub Pages hosts those files from the repository site after the commit lands.
+
+Media metadata is written to the D1 `media` table with `entity_type`, `entity_id`, `media_type`, `url`, `title`, `alt`, `sort_order`, and `is_cover`.
