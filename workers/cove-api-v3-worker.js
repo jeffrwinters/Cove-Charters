@@ -29,6 +29,7 @@ export default {
       if (path.match(/^\/api\/v1\/bookings\/[^/]+\/send-agreement-packet$/)) return await sendAgreementPacket(request, env, cors, path.split('/')[4]);
       if (path.match(/^\/api\/v1\/bookings\/[^/]+\/send-confirmation$/)) return await sendBookingConfirmation(request, env, cors, path.split('/')[4]);
       if (path.match(/^\/api\/v1\/bookings\/[^/]+\/send-captain-packet$/)) return await sendCaptainPacket(request, env, cors, path.split('/')[4]);
+      if (path.match(/^\/api\/v1\/bookings\/[^/]+\/send-final-invoice$/)) return await sendFinalInvoice(request, env, cors, path.split('/')[4]);
       if (path.startsWith('/api/v1/bookings/')) return await bookingById(request, env, cors, path.split('/').pop());
       if (path.match(/^\/api\/v1\/signing\/[^/]+$/)) return await signingPacket(request, env, cors, path.split('/').pop());
       if (path === '/api/v1/settings') return await settings(request, env, cors);
@@ -46,7 +47,7 @@ async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
       const resendConfigured = Boolean(env.RESEND_API_KEY && env.BOOKING_NOTIFY_FROM);
-  return json({ ok: true, service: 'cove-api', version: '0.3.29', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
+  return json({ ok: true, service: 'cove-api', version: '0.3.30', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
 }
 
 async function settings(request, env, cors) {
@@ -1074,6 +1075,34 @@ async function sendCaptainPacket(request, env, cors, id) {
   return json({ ok: true, sent: true, result }, 200, cors);
 }
 
+async function sendFinalInvoice(request, env, cors, id) {
+  requireDb(env);
+  const auth = requireAdmin(request, env);
+  if (auth) return json(auth.body, auth.status, cors);
+  if (request.method !== 'POST') return json({ error: 'POST required' }, 405, cors);
+
+  const row = await env.DB.prepare(bookingSelectSql('WHERE bk.id = ?')).bind(id).first();
+  if (!row) return json({ error: 'Booking not found' }, 404, cors);
+  const booking = (await attachBookingDocuments(env, [outBooking(row)]))[0];
+  if (!booking.email) return json({ error: 'Booking has no customer email address' }, 400, cors);
+  if (!env.RESEND_API_KEY || !env.BOOKING_NOTIFY_FROM) {
+    return json({ ok: false, sent: false, configured: false, provider: 'resend', error: 'Customer email is not configured' }, 501, cors);
+  }
+
+  const trip = await env.DB.prepare('SELECT * FROM trips WHERE booking_id = ?').bind(id).first();
+  const settlement = await env.DB.prepare('SELECT * FROM settlements WHERE booking_id = ? ORDER BY updated_at DESC LIMIT 1').bind(id).first();
+  const calculation = await calculateSettlement(env, row, trip || {}, settlement || {});
+  const result = await sendCustomerFinalInvoice(env, booking, calculation);
+  const note = `[${new Date().toLocaleString('en-US', { timeZone: 'America/Chicago' })}] Final invoice sent to ${booking.email}`;
+  await env.DB.prepare(`
+    UPDATE bookings
+    SET office_notes = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).bind([booking.officeNotes, note].filter(Boolean).join('\n'), id).run();
+
+  return json({ ok: true, sent: true, result, calculation }, 200, cors);
+}
+
 function bookingSelectSql(suffix = '') {
   return `
     SELECT bk.*, b.name AS boat_name, b.slug AS boat_slug, c.name AS captain_name,
@@ -1453,6 +1482,30 @@ async function sendCaptainTripPacket(env, booking) {
   });
 }
 
+async function sendCustomerFinalInvoice(env, booking, calculation) {
+  const subject = `Cove Charters final invoice: ${booking.boatName || booking.boatId}`;
+  const invoice = customerInvoiceLines(booking, calculation);
+  const rows = invoice.items.map(item => `<tr><td style="padding:8px 0;border-bottom:1px solid #e6eef2">${escapeHtml(item.label)}</td><td style="padding:8px 0;border-bottom:1px solid #e6eef2;text-align:right">${escapeHtml(moneyText(item.amount))}</td></tr>`).join('');
+  const html = `
+    <h2>Your Cove Charters final invoice</h2>
+    <p>Hi ${escapeHtml(booking.customerName || 'there')},</p>
+    <p>Thank you for choosing Cove Charters. Here is the final invoice summary for your charter.</p>
+    <p><strong>Boat:</strong> ${escapeHtml(booking.boatName || booking.boatId)}<br><strong>Date:</strong> ${escapeHtml(booking.charterDate || 'TBD')}<br><strong>Start:</strong> ${escapeHtml(booking.startTime || 'TBD')}<br><strong>Duration:</strong> ${escapeHtml(booking.durationHours || 'TBD')} hours<br><strong>Captain:</strong> ${escapeHtml(booking.captainName || 'Captain TBD')}</p>
+    <table style="width:100%;border-collapse:collapse">${rows}</table>
+    <p><strong>Net final charges:</strong> ${escapeHtml(moneyText(invoice.netFinalCharges))}</p>
+    <p><strong>Fuel deposit refund / credit:</strong> ${escapeHtml(moneyText(calculation.fuelDepositRefund))}</p>
+    <p><strong>Payment status:</strong> ${escapeHtml(booking.paidStatus || calculation.customerPaidStatus || 'unsettled')}</p>
+    <p>Please reply to this email with any questions. If a balance or refund remains, Cove will coordinate the next step.</p>
+  `;
+  return await sendResendEmail(env, {
+    to: booking.email,
+    reply_to: env.BOOKING_REPLY_TO || env.BOOKING_NOTIFY_FROM,
+    subject,
+    text: invoice.lines.join('\n'),
+    html
+  });
+}
+
 async function sendSignedAgreementNotice(env, booking) {
   if (!env.RESEND_API_KEY || !env.BOOKING_NOTIFY_FROM) return null;
   const recipients = [
@@ -1566,6 +1619,57 @@ function captainPacketLines(booking) {
     ``,
     `Back office will send updates if agreement, payment, weather, or schedule details change.`
   ];
+}
+
+function customerInvoiceLines(booking, calculation) {
+  const items = finalInvoiceItems(calculation);
+  const netFinalCharges = roundMoney(
+    calculation.baseFee +
+    calculation.cleaningFee +
+    calculation.taxCollected +
+    calculation.mileageCharge +
+    calculation.additionalCharges
+  );
+  return {
+    items,
+    netFinalCharges,
+    lines: [
+      `Hi ${booking.customerName || 'there'},`,
+      ``,
+      `Thank you for choosing Cove Charters. Here is the final invoice summary for your charter.`,
+      ``,
+      `Booking: ${booking.id}`,
+      `Boat: ${booking.boatName || booking.boatId}`,
+      `Date: ${booking.charterDate || 'TBD'}`,
+      `Start time: ${booking.startTime || 'TBD'}`,
+      `Duration: ${booking.durationHours || 'TBD'} hours`,
+      `Captain: ${booking.captainName || 'Captain TBD'}`,
+      ``,
+      ...items.map(item => `${item.label}: ${moneyText(item.amount)}`),
+      ``,
+      `Fuel deposit collected: ${moneyText(calculation.fuelDeposit)}`,
+      `Net final charges: ${moneyText(netFinalCharges)}`,
+      `Fuel deposit refund / credit: ${moneyText(calculation.fuelDepositRefund)}`,
+      `Payment status: ${booking.paidStatus || 'unsettled'}`,
+      ``,
+      `Please reply to this email with any questions. If a balance or refund remains, Cove will coordinate the next step.`
+    ]
+  };
+}
+
+function finalInvoiceItems(calculation) {
+  const additionalItems = Array.isArray(calculation.additionalChargeItems) ? calculation.additionalChargeItems : [];
+  return [
+    { label: 'Charter fee', amount: calculation.baseFee },
+    { label: 'Cleaning fee', amount: calculation.cleaningFee },
+    { label: 'Sales tax', amount: calculation.taxCollected },
+    { label: `Fuel charge (${calculation.milesTraveled || 0} miles)`, amount: calculation.mileageCharge },
+    ...additionalItems.map(item => ({ label: item.description || 'Additional charge', amount: item.amount }))
+  ].filter(item => Number(item.amount || 0) !== 0 || item.label === 'Charter fee');
+}
+
+function moneyText(value) {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(num(value, 0));
 }
 
 function templateAgreementAttachments(env) {

@@ -119,6 +119,7 @@ Completed so far:
 - Settlement math now follows the reviewed `Charges and Payout.xlsx` workbook; a formula-preserving CSV copy is stored at `docs/Charges and Payout.csv`.
 - Current settlement rules: captain pay is actual hours times the captain hourly rate; owner/Cove split the charter fee after captain pay; sales tax is calculated on charter fee plus cleaning fee; total collected includes charter fee, cleaning, tax, fuel deposit, fuel charge, and additional charge line items; fuel deposit refund is reduced by fuel charge and additional charges.
 - Admin now includes a basic Owners manager. Boats can be assigned to an owner from the Boat editor dropdown or from the Owner manager's owned-boats checklist.
+- Admin confirmed/completed bookings can send a final invoice to the customer. The action saves the current settlement first, then emails an itemized final invoice through Resend.
 - Admin Bookings has filters for status, boat, captain, date range, and text search.
 - Admin Bookings includes a master month calendar for dated booking requests; calendar entries respect the same status, boat, captain, date, and search filters.
 - Booking statuses for admin operations are `requested`, `reviewing`, `confirmed`, `completed`, `declined`, and `cancelled`.
