@@ -105,6 +105,7 @@ Agreement workflow fields:
 ### booking_documents
 
 Stores documents attached to a booking, including signed bareboat agreements.
+Electronic signing records use `document_type = electronic_signature_record` and point to `signed.html?token=...` so the office/captain can open a printable signed packet from the booking.
 
 Important fields:
 

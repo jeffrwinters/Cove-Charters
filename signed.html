@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cove Charters | Signed Charter Packet</title>
+  <meta name="description" content="View a completed Cove Charters signed charter packet." />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    :root{--navy:#071923;--water:#0f6f8f;--sand:#f2dfbd;--ink:#10212b;--muted:#667987;--bg:#f8f3e9;--line:#dbe7eb;--good:#1f8a5b;--shadow:0 22px 60px rgba(7,25,35,.12)}*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,sans-serif;color:var(--ink);background:var(--bg)}.wrap{width:min(980px,calc(100% - 32px));margin:auto;padding-bottom:40px}.nav{padding:22px 0;display:flex;align-items:center;justify-content:space-between;gap:12px}.brand{font-weight:900;letter-spacing:.08em;text-transform:uppercase}.btn{min-height:42px;padding:0 16px;border:0;border-radius:999px;background:var(--navy);color:white;font-weight:900;cursor:pointer}.hero,.card{background:white;border:1px solid rgba(16,33,43,.08);border-radius:24px;box-shadow:var(--shadow);padding:24px}.hero{background:var(--navy);color:white}.hero h1{margin:8px 0 10px;font-size:clamp(34px,6vw,58px);line-height:.95;letter-spacing:-.055em}.hero p{color:rgba(255,255,255,.76);line-height:1.6}.kicker{font-size:12px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;color:var(--sand)}.card{margin:18px 0}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.detail{border-radius:16px;background:#f8fbfc;border:1px solid var(--line);padding:14px}.detail span{display:block;color:var(--muted);font-size:12px;font-weight:900;text-transform:uppercase}.detail strong{display:block;margin-top:4px;font-size:16px}.signature{border-color:#c9ead8;background:#f5fcf8}.signature strong{font-size:22px}.doc h2{margin:0 0 8px;font-size:28px;letter-spacing:-.04em}.legal{white-space:pre-wrap;background:#f8fbfc;border:1px solid var(--line);border-radius:18px;padding:16px;line-height:1.55;color:#304854}.accepted{margin-top:12px;display:flex;flex-wrap:wrap;gap:8px}.pill{padding:8px 10px;border-radius:999px;background:#eef6f8;color:#3f5965;font-size:12px;font-weight:900}.status{font-weight:800;color:var(--muted)}.status.good{color:var(--good)}@media(max-width:680px){.grid{grid-template-columns:1fr}.nav{display:grid}.btn{width:100%}.hero,.card{border-radius:20px}}@media print{body{background:white}.nav .btn{display:none}.wrap{width:100%;padding:0}.hero,.card{box-shadow:none;break-inside:avoid}.hero{color:var(--ink);background:white}.hero p{color:var(--muted)}.kicker{color:var(--water)}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <nav class="nav"><div class="brand">Cove Charters</div><button class="btn" type="button" onclick="print()">Print / Save PDF</button></nav>
+    <section class="hero"><div class="kicker">Signed Documents</div><h1>Signed charter packet.</h1><p id="intro">Loading signed record...</p></section>
+    <main id="app"><section class="card"><p class="status">Loading...</p></section></main>
+  </div>
+  <script>
+    const COVE_API='https://cove-api.jeff-r-winters.workers.dev';
+    const token=new URLSearchParams(location.search).get('token')||'';
+    const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    function details(booking){const rows=[['Boat',booking.boatName||'Confirmed boat'],['Captain',booking.captainName||'Confirmed captain'],['Date',booking.charterDate||'Confirmed date'],['Start time',booking.startTime||'Confirmed start time'],['Duration',booking.durationHours?`${booking.durationHours} hours`:'Confirmed duration'],['Customer',booking.customerName||'Confirmed customer']];return `<section class="card"><h2>Confirmed charter details</h2><div class="grid">${rows.map(([label,value])=>`<div class="detail"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`).join('')}</div></section>`}
+    function acceptedFor(signature,section){return (signature.accepted||[]).find(item=>item.id===section.id)||{};}
+    function render(data){const {booking,sections,signature}=data;intro.textContent=`Signed by ${signature.signerName} on ${signature.signedAt || 'the recorded signing date'}.`;app.innerHTML=`${details(booking)}<section class="card signature"><div class="kicker" style="color:var(--water)">Electronic signature</div><p><strong>${esc(signature.signatureText||signature.signerName)}</strong></p><p class="status good">Signed by ${esc(signature.signerName)}${signature.signerEmail?` (${esc(signature.signerEmail)})`:''} on ${esc(signature.signedAt||'recorded date')}.</p></section>${sections.map(section=>{const accepted=acceptedFor(signature,section);return `<section class="card doc"><h2>${esc(section.title)}</h2><p>${esc(section.summary||'')}</p><div class="legal">${esc(section.body)}</div><div class="accepted"><span class="pill">Accepted: ${accepted.accepted?'Yes':'Recorded'}</span><span class="pill">Initials: ${esc(accepted.initials||'Recorded')}</span></div></section>`}).join('')}`;}
+    async function load(){try{if(!token)throw new Error('Missing signed document token.');const r=await fetch(`${COVE_API}/api/v1/signing/${encodeURIComponent(token)}/record`,{cache:'no-store'});const d=await r.json();if(!r.ok)throw new Error(d.error||'Could not load signed record');render(d);}catch(error){app.innerHTML=`<section class="card"><p class="status">${esc(error.message)}</p></section>`;}}
+    load();
+  </script>
+</body>
+</html>

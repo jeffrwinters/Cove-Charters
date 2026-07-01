@@ -33,6 +33,7 @@ export default {
       if (path.match(/^\/api\/v1\/bookings\/[^/]+\/send-captain-packet$/)) return await sendCaptainPacket(request, env, cors, path.split('/')[4]);
       if (path.match(/^\/api\/v1\/bookings\/[^/]+\/send-final-invoice$/)) return await sendFinalInvoice(request, env, cors, path.split('/')[4]);
       if (path.startsWith('/api/v1/bookings/')) return await bookingById(request, env, cors, path.split('/').pop());
+      if (path.match(/^\/api\/v1\/signing\/[^/]+\/record$/)) return await signingRecord(request, env, cors, path.split('/')[4]);
       if (path.match(/^\/api\/v1\/signing\/[^/]+$/)) return await signingPacket(request, env, cors, path.split('/').pop());
       if (path === '/api/v1/settings') return await settings(request, env, cors);
       if (path === '/api/v1/media') return await media(request, env, cors);
@@ -49,7 +50,7 @@ async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
       const resendConfigured = Boolean(env.RESEND_API_KEY && env.BOOKING_NOTIFY_FROM);
-  return json({ ok: true, service: 'cove-api', version: '0.3.33', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
+  return json({ ok: true, service: 'cove-api', version: '0.3.34', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
 }
 
 async function settings(request, env, cors) {
@@ -1122,7 +1123,7 @@ async function signingPacket(request, env, cors, token) {
       WHERE id = ?
     `).bind(booking.id).run();
 
-    const summaryUrl = `${env.ADMIN_URL || 'https://jeffrwinters.github.io/Cove-Charters/admin.html'}#booking-${booking.id}`;
+    const summaryUrl = signedRecordUrl(env, token);
     await env.DB.prepare(`
       INSERT INTO booking_documents (id, booking_id, document_type, title, url, filename, content_type, status, audience, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
@@ -1130,10 +1131,10 @@ async function signingPacket(request, env, cors, token) {
       `doc_${crypto.randomUUID()}`,
       booking.id,
       'electronic_signature_record',
-      'Electronic signing record',
+      'Signed electronic charter packet',
       summaryUrl,
-      `electronic-signature-${booking.id}.json`,
-      'application/json',
+      `signed-charter-packet-${booking.id}.html`,
+      'text/html',
       'signed',
       'office,captain'
     ).run();
@@ -1146,6 +1147,22 @@ async function signingPacket(request, env, cors, token) {
   }
 
   return json({ error: 'GET or POST required' }, 405, cors);
+}
+
+async function signingRecord(request, env, cors, token) {
+  requireDb(env);
+  if (request.method !== 'GET') return json({ error: 'GET required' }, 405, cors);
+  const row = await env.DB.prepare(bookingSelectSql('WHERE bk.signing_token = ?')).bind(token).first();
+  if (!row) return json({ error: 'Signed record not found' }, 404, cors);
+  const booking = (await attachBookingDocuments(env, [outBooking(row)]))[0];
+  const signature = (booking.signatures || [])[0] || null;
+  if (!signature) return json({ error: 'Signed record is not complete yet' }, 404, cors);
+  return json({
+    booking: publicSigningBooking(booking),
+    sections: agreementSections(booking),
+    signature,
+    completed: true
+  }, 200, cors);
 }
 
 async function sendBookingConfirmation(request, env, cors, id) {
@@ -1867,6 +1884,10 @@ function safeAttachmentName(title, fallback = 'document') {
 
 function publicSiteUrl(env) {
   return (env.PUBLIC_SITE_URL || 'https://jeffrwinters.github.io/Cove-Charters').replace(/\/+$/, '');
+}
+
+function signedRecordUrl(env, token) {
+  return `${publicSiteUrl(env)}/signed.html?token=${encodeURIComponent(token)}`;
 }
 
 function escapeHtml(value) {

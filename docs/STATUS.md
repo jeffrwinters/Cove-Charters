@@ -18,7 +18,7 @@ The active Worker file is:
 workers/cove-api-v3-worker.js
 ```
 
-The current API version is `0.3.33` after moving Customers to durable D1-backed admin records.
+The current API version is `0.3.34` after making electronic signed packets available as booking documents.
 
 ## Working End To End
 
@@ -113,6 +113,7 @@ Completed so far:
 - The Captain Service Agreement section displays the selected captain name directly, matching the old document pattern where the captain was named in the agreement opening.
 - Signing initials now carry forward after first entry, and section navigation validates the current step before moving.
 - Public signing submissions are stored in `booking_signatures` and mark the booking agreement as signed.
+- Signed electronic packets are attached to bookings as openable/printable `signed.html?token=...` documents.
 - When a customer signs, Cove sends a signed-document notice to the back office and assigned captain when email is configured and the captain has an email address.
 - Signed charter documents can be attached to booking records through `POST /api/v1/bookings/{id}/documents`.
 - Booking emails use Resend REST API when `RESEND_API_KEY` and `BOOKING_NOTIFY_FROM` are configured.
