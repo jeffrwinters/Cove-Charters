@@ -41,8 +41,8 @@ export default {
 async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
-  const resendConfigured = Boolean(env.RESEND_API_KEY && env.BOOKING_NOTIFY_FROM);
-  return json({ ok: true, service: 'cove-api', version: '0.3.21', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
+      const resendConfigured = Boolean(env.RESEND_API_KEY && env.BOOKING_NOTIFY_FROM);
+  return json({ ok: true, service: 'cove-api', version: '0.3.22', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
 }
 
 async function settings(request, env, cors) {
@@ -593,7 +593,7 @@ async function signingPacket(request, env, cors, token) {
   if (request.method === 'GET') {
     return json({
       booking: publicSigningBooking(booking),
-      sections: agreementSections(),
+      sections: agreementSections(booking),
       completed: booking.agreementStatus === 'signed' || Boolean(booking.signingCompletedAt)
     }, 200, cors);
   }
@@ -845,39 +845,141 @@ function publicSigningBooking(booking) {
   };
 }
 
-function agreementSections() {
+function agreementSections(booking = {}) {
+  const captainName = booking.captainName || 'the confirmed captain';
+  const charterDate = booking.charterDate || 'the confirmed charter date';
+  const startTime = booking.startTime || 'the confirmed start time';
+  const durationHours = booking.durationHours ? `${booking.durationHours} hours` : 'the confirmed charter duration';
+  const endTime = booking.endTime || estimatedEndTime(booking.startTime, booking.durationHours) || 'the confirmed end time';
   return [
     {
       id: 'captain_service_agreement',
       title: 'Captain Service Agreement',
       summary: 'Confirms the customer selected the captain and understands captain services are separate from the vessel charter.',
-      body: 'Final legal text pending. Replace this section with the approved Captain Service Agreement before production signing.'
+      body: `THIS CAPTAIN SERVICES AGREEMENT (this “Agreement”) is made as of ${new Date().toLocaleDateString("en-US")} by and between the Charterer signing this packet , individually and ${captainName} a USCG licensed captain (the “Captain”) And the confirmed crew member, individually (the “Crew”). If necessary additional crew members are attached to the Captain Services Agreement.
+
+1. This agreement shall cover a period of ${durationHours} on ${charterDate}. Any additional hours agreed upon by the parties hereto in writing and attached hereto, for contract as crew on the vessel.
+
+2. The Captain and Crew shall have sole authority and responsibility for the safe navigation and safety of the vessel.
+
+3. The Captain and Crew shall perform assigned duties on the vessel in a timely, neat, first class, good and workmanlike manner, in strict compliance with the laws of the United States of America and in accordance with all rules and regulations that may be applicable to this agreement and the performance of said duties.  The Captain will have the final decision on the safe operation of the vessel.
+
+4. The Captain and Crew have the power and authority to report any illegal drugs or drug use on board to the proper authorities and make arrangements for the vessel to be met at dock.  The Captain also has the right to terminate the Charter at any time for improper, abusive or dangerous behavior on board.
+
+5. Captains and Crews relationship to the Charterer shall be that of an independent contractor and not of an employee or agent of the Charterer.  The Captain and Crew have discretion as to how to perform the services contemplated by this agreement.
+
+NOTE:  The following paragraph (#6) is for additional hours of service only.  The Boat/Yacht, Captain, Crew and all other add-ons have been paid in full (or will be paid in full) through Cove Charters Payment options.
+
+6. In the event Charter extends past scheduled time, additional charges may apply, and will be charged to Charterer.
+
+IN WITNESS WHEREOF, the parties have executed this agreement as of the date first referenced above.
+
+CHARTERER:`
     },
     {
       id: 'bareboat_charter_agreement',
       title: 'Bareboat Charter Agreement',
       summary: 'Defines the bareboat charter terms for the vessel, charter period, customer responsibilities, and required captain selection.',
-      body: 'Final legal text pending. Replace this section with the approved Bareboat Charter Agreement before production signing.'
+      body: `1. Owner has agreed, pursuant to those terms of use to let end demise bareboat and the Charterer hereby agrees to hire on a bareboat basis upon the terms and conditions and for the consideration hereinafter set forth, as well as the terms of use which are incorporated herein by reference, the said vessel for a period commencing at ${startTime} and ending at ${endTime} on ${charterDate}
+
+2. Charterer acknowledges that the owner has warranted that the vessel is in good seaworthy condition and complies with all applicable laws and regulations pertaining to the condition of the vessel.
+
+3. Charterer takes complete possession of the vessel, operating it as if it were their own with full
+incidents of ownership; Charterer has complete control over the captain and crew, except as to the safe navigation and safety of the vessel.
+
+4. Charterer acknowledges that the skipper hired or appointed by Charterer will be a qualified and competent person who shall be responsible for the safe navigation of the vessel.
+
+5. Charterer has the option to secure and keep in force during the entire term of this charter, in addition to the insurance already in place, a standard marine insurance policy including hull coverage, to full value and protection and indemnity coverage in such form, with such carrier or carriers so as to protect owner and/or charterer against any and all liability incident to the operation of the vessel.
+
+6. Charterer agrees that the vessel shall be employed exclusively as a pleasure vessel for the sole and proper use of itself and guests during the term of this charter. Charterer further agrees not to transport MERCHANDISE FOR HIRE or CARRY PASSENGERS FOR HIRE, or engage in any trade, or in any way violate any laws of the United States or of any other government within the jurisdiction of which the vessel may be at any time during the charter.
+
+7. Charterer acknowledges and agrees that they have been given a selection of Captain and crew. A list or roster of qualified operators (Captains) was presented at the time of booking for the charterer to choose from. The Charterer was also given the option to select Captain and crew of their choosing. The Captain Services Agreement displays the captain selected by the Charterer only.`
     },
     {
       id: 'waiver_release_indemnification',
       title: 'Waiver, Release, and Indemnification',
       summary: 'Captures customer acknowledgement of boating risks, releases, and indemnification obligations.',
-      body: 'Final legal text pending. Replace this section with the approved Waiver, Release, and Indemnification language before production signing.'
+      body: `Terms & Conditions
+
+In the consideration of the mutual promises and covenants set forth in this release, and for other good and valuable consideration, the receipt and adequacy of which are hereby acknowledged, Cove Charters LLC  and Charterer agree as follows:
+
+1. In consideration of Cove Charters LLC permitting Charterer to utilize the services, Charterer, and to the full extent allowed by law, on behalf of him or herself, his or her spouse, children/wards and guests (the “Charterer Parties”), does hereby release, waive and discharge Cove Charters LLC of and from any and all manner of action or actions, cause or causes of action, in law or in equity, suits, debts, liens, contracts, agreements, promises, covenants, obligations, liabilities, claims, demands, losses, damages, cost or expenses, including but not limited to court costs and attorneys’ fees (including reasonable attorneys’ and paralegals’ fees and costs incurred before and at trial, at all tribunal levels, whether or not suit is instituted, and at arbitration and in establishing this right to indemnification), of any natural whatsoever, whether or not now known, claimed or suspected, fixed or contingent (hereinafter collectively referred to as “CLAIMS”) which the Charterer Parties may have, or which may hereafter accrue to the Charterer Parties, as a result of Charterer’s, and to the full extent allowed by law, the Charterer Parties’ use of the Services. This release is intended to discharge in advance Cove Charters LLC, its members, officers, employees and agents (“Cove Charters LLC PARTIES”) from any and all liability arising out of or connected in any way with the Charterer Parties’ use of the Services and/or participation in the Yacht Membership Club even though that liability may arise out of negligence or carelessness on the part of the Cove Charters LLC Parties.
+
+2. Charterer’s receipt of the services involves known and unknown RISKS associated with water activities. Such RISKS include, but are not limited to: drowning, traversing wet and slippery surfaces, physical trauma, strains, bruises, sprains, muscle tears, broken bones, sunburn, swimming in deep water, wading in shallow water, damage to or loss of real or personal property and other serious bodily injury, including cardiac injuries and heart attacks, permanent disability, paralysis and death, which may be caused by the Charterer Parties’ own actions or inactions or the actions or inactions of the Captain or the other passengers on the yacht, the condition of the yacht, or the negligence of Cove Charters LLC, whether passive or active; and that there may be other risks either not known to the Charterer Parties’ or not readily foreseeable at the time. Charterer, and to the full extent allowed by law on behalf of the Charterer Parties’, hereby agree to fully accept and assume all such RISKS and all responsibility for losses, cost, and damages the Charterer Parties incur as a result of the Charterer and the Charterer Parties’
+
+3. TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE COVE CHARTERS PARTIES SHALL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, OR ANY LOSS OF PROFITS OR REVENUES, WHETHER INCURRED DIRECTLY OR INDIRECTLY, OR ANY LOSS OF DATA, USE, GOOD-WILL, OR OTHER INTANGIBLE LOSSES, RESULTING FROM CHARTERER’S, AND TO THE FULL EXTENT ALLOWED BY LAW THE CHARTERER PARTIES USE OF THE SERVICES. THE LIMITATIONS OF THIS SECTION SHALL APPLY TO ANY THERY OF LIABILITY, WHETHER BASED ON WARRANTY, CONTRACT, STATUTE, TORT (INCLUDING NEGLIGENCE) OR OTHERWISE, AND WHETHER OR NOT Cove Charters LLC HAS BEEN INFORMED OF THE POSSIBILITY OF ANY SUCH DAMAGE, AND EVEN IF A REMEDY SET FORTH HEREIN IS FOUND TO HAVE FAILED OF ITS ESSENTIAL PURPOSE.
+
+4. The Charterer and to the full extent allowed by law, the Charterer Parties, and each of them,
+hereby indemnifies, defends, and holds harmless the Cove Charterers Parties from, against and in respect of any and all direct and/or indirect claims asserted against or suffered or incurred by the Cove Charters LLC Parties to the extent directly or indirectly under, caused, resulting from or in connection with the Charterer’s, and to the full extent allowed by law the Charterer Parties use of the Services, even if such claims arise out of or in connection with the negligence of the Cove Charters LLC Parties.
+
+5. The indemnification provision in Section 4 shall not apply in the event of gross negligence or
+intentional torts by any Cove Charters LLC Party.
+
+6. The Terms of Use are incorporated herein by reference.`
     },
     {
       id: 'rules_guidelines_fines',
       title: 'Rules, Guidelines, and Fines',
       summary: 'Lists operational rules, prohibited conduct, vessel care expectations, and fines or charges.',
-      body: 'Final legal text pending. Replace this section with the approved Rules, Guidelines, and Fines before production signing.'
+      body: `It is Cove Charters LLC mission to provide a safe and fun option for anyone looking to enjoy the water. We want you and your group to abide by the rules and guidelines set forth in order to keep you, your guests, the crew, and the vessel safe. Any violation of these rules will result in fines and fees charged to the credit card of the charterer. By signing this agreement, you are agreeing to any of these fines and charges. The Captain and crew have the right to TERMINATE your charter at anytime if your actions/behavior puts you, your guests, the crew, or the vessel at risk and NO REFUND WILL BE GIVEN REGARDLESS OF THE TIME NOT USED ON THE VESSEL. In addition to the full charter price being charged, the charterer will also be responsible for any and all fuel expenses, taxes, gratuity, and other expenses incurred including but not limited to dockage, provisions, etc.
+
+The rules and guidelines include but are not limited to:
+
+1. THE LEGAL PASSENGER CAPACITY OF THE VESSEL MAY NOT BE EXCEEDED for any reason, at the commencement or during the charter, unless for a medical/safety emergency.
+Passenger capacities do no include the CHARTERER, CAPTAIN, OR CREW MEMBERS. THIS IS A FEDERAL LAW AND ANY CITATIONS BY THE UNITED STATES COAST GUARD (Or any other law enforcement agency) ARE THE FULL RESPONSIBILITY OF THE CHARTERER. The maximum fine administered by Cove Charters LLC is $1,000.00 plus the cost of any fines
+administered by any law enforcement agency. The Captain WILL report any overboarding
+and has the full right to terminate the charter with no refund of the deposit of full charter
+amount.
+
+2. NO SMOKING OR OPEN FLAMES ON BOARD. Marijuana use or possession is not allowed. Any charterer found in violation of this policy may be removed without a refund.Smoking of any kind is forbidden. Vaping and E-sigs are allowed. Any burns to seats, flooring, bedding, teak, or otherwise must be fully repaired to “Like New” condition at the expense of the Charterer. The maximum fine administered by Cove Charters LLC for smoking or open flames of any kind is $500.00 plus the full cost of the repair/restoration of the damaged article/area.
+
+3. NO RED WINES OR RED DRINKS OF ANY KIND…..PERIOD! Red wine and red drinks stain seats, carpets, teak, etc. Any stains due to spills of any red drink or wine must be repaired to like new condition at the expense of the Charterer. The maximum fine administered by Cove Charters LLC for bringing any red drink or red wine on board is $250.00 plus the full cost of any repair/restoration of the damaged area/article.
+
+4. No loud or vulgar music or sound pollution allowed when in a private marina. Private marinas strictly prohibit loud or vulgar music, and the Captain/crew needs to be able to hear while docking and undocking the vessel. Once you exit the marina area, you are allowed to turn up the music and have a good time! The maximum fine for loud and vulgar music in a private marina or in any instance the Captain/Crew have instructed the music be turned down for any reason administered by Cove Charters LLC is $250.00 plus the full cost of repair/restoration of each damaged speaker if applicable.
+
+5. NO ILLEGAL DRUGS OF ANY KIND are allowed on the vessel. Captains have the right to terminate the Charter immediately and no refund will be given to the Charterer(s). Captains also have the obligation to contact law enforcement and have any illegal drug activity reported to local law enforcement agents. The maximum fine administered for illegal drugs is $1,000.00.
+
+6. NO JUMPING OFF THE VESSEL while it is underway (moving) or when the motors are on. Whether you are wanting to jump in the water, onto a beach, dock, or any other surface, you must wait for the Captain/Crew to give the ok. YOU MUST ALWAYS INFORM THE CREW IF YOU ARE JUMPING IN THE WATER. The maximum fine for jumping off the vessel at an inappropriate time is $500.00 per occurrence.
+
+7. LISTEN TO AND FOLLOW THE CAPTAIN AND CREW’S INSTRUCTIONS AT ALL TIMES. The Captain and Crew have the duty to keep you, your guests, the vessel, and themselves safe at all times. This is a HUGE responsibility and as so, they have the final say in safety. PLEASE LISTEN TO THEIR INSTRUCTIONS AT ALL TIMES. The maximum fine for failing to follow the Captains/Crews instructions is $500.00 per occurrence plus any additional damage, repair, restoration, or otherwise.`
     },
     {
       id: 'cancellation_policy',
       title: 'Cancellation Policy',
       summary: 'Explains cancellation, weather, timing, refund, and rescheduling terms.',
-      body: 'Final legal text pending. Replace this section with the approved Cancellation Policy before production signing.'
-    }
+      body: `These terms and conditions govern Cove Charters LLC Cancellation Policy (the “Cancellation Policy”) available to Charterers and Owners through the Services. Cove Charters LLC has a
+standardized cancellation policy for all boats on the platform that we will enforce to protect both Renter (“Charterer”) and Boat Owner. Each party has the ability to cancel at any time. The fee schedule will be determined when the cancellation occurs in relation to the reservation dates (“set sail date” or “departure date”).
+
+The cancellation is as follows: If the vessel was booked (deposit made) with more than 72 hours of the departure date:
+
+● Free cancellations for 24 hours after the deposit is made.
+
+● After 24 hours, the deposit is non-refundable.
+
+● The remaining balance will be deducted at least 7 days prior to the departure date.
+
+● After the remaining balance has been charged, cancellations are non-refundable unless weather or mechanical failure occurs. Only the USCG Licensed Captain and Cove Charter may cancel due to weather conditions. That decision will be determined on the day of departure only. Forecasts are not an acceptable reason for cancellation.
+
+● Note: if your charter departure date is less than 7 days away, there are no refunds or cancellations. You may reschedule only. Reschedule fees apply. See below. If the vessel was booked (deposit made) within (less than) 72 hours of the departure date:
+
+● Cancellations are non-refundable. No exceptions.
+
+● Note: if you place a deposit for a charter that takes place within 72 hours of the departure date (ex: next day or same day bookings), there are no refunds or cancellations. All sales are final and subject to forfeit the entire remaining balance.
+
+● Note: Weather and/or Mechanical failure will still result in a reschedule only.`
+    },
   ];
+}
+
+function estimatedEndTime(startTime, durationHours) {
+  if (!startTime || !durationHours) return null;
+  const match = String(startTime).match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return null;
+  const startMinutes = Number(match[1]) * 60 + Number(match[2]);
+  const endMinutes = startMinutes + Number(durationHours) * 60;
+  const hours = Math.floor((endMinutes / 60) % 24);
+  const minutes = Math.round(endMinutes % 60);
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 }
 
 function safeJson(value, fallback) {

@@ -102,13 +102,14 @@ Completed so far:
 - Booking records now track `agreement_status`, sent/signed timestamps, and an optional `signing_url`.
 - Cove now has an internal public signing page at `sign.html?token=...`; agreement packet emails generate this link when a custom signing URL is not provided.
 - The signing page treats boat, captain, date, start time, duration, and customer as display-only confirmed details. If those change, back office should update the booking and send a fresh signing packet.
+- Internal signing sections now use the legal copy lifted from the existing Cove Gravity Forms agreement page, with old booking-selection placeholders normalized to confirmed booking details.
 - Public signing submissions are stored in `booking_signatures` and mark the booking agreement as signed.
 - Signed charter documents can be attached to booking records through `POST /api/v1/bookings/{id}/documents`.
 - Booking emails use Resend REST API when `RESEND_API_KEY` and `BOOKING_NOTIFY_FROM` are configured.
 - Admin confirmed/completed bookings with an assigned captain include Copy Captain Packet and Send Captain Packet. The send action calls `POST /api/v1/bookings/{id}/send-captain-packet`, requires the assigned captain to have an email address, and attaches signed booking documents / configured bareboat template URLs when available.
 - Current MVP email sender uses the temporary `lakefrontatloto.com` domain. Revisit this configuration after Cove controls `covecharters.com`; likely target is `BOOKING_NOTIFY_FROM=bookings@covecharters.com` with replies routed to the back-office inbox.
 - Agreement handling is intentionally post-confirmation: customer booking requests stay lightweight, then back office sends a guided document packet and attaches signed documents to the booking for office/captain access.
-- Source legal copy may come from the existing Cove multi-step agreement page, even though all steps share one URL; split the extracted content into the five internal signing sections before production use.
+- Source legal copy came from the existing Cove multi-step agreement page, even though all steps share one URL; final business/legal review is still needed before production reliance.
 - Confirmed/completed admin booking cards include MVP trip closeout controls for actual hours, payment status, and closeout notes. Complete Trip stamps office notes, marks the booking completed, and copies a settlement summary.
 - Admin Bookings has filters for status, boat, captain, date range, and text search.
 - Admin Bookings includes a master month calendar for dated booking requests; calendar entries respect the same status, boat, captain, date, and search filters.
