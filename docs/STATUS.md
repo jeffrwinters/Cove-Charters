@@ -103,6 +103,7 @@ Completed so far:
 - After back-office confirmation, Admin automatically sends a guided agreement packet with `POST /api/v1/bookings/{id}/send-agreement-packet`; the detail view also keeps a Resend Agreement action.
 - Sending an agreement packet now requires a boat, captain, date, start time, and duration. Admin saves the current booking edits before sending so date/time/captain changes are baked into the packet.
 - Booking records now track `agreement_status`, sent/signed timestamps, and an optional `signing_url`.
+- Admin shows agreement state as a read-only booking indicator; signed document attachments mark the agreement signed instead of exposing a separate document status picker.
 - Cove now has an internal public signing page at `sign.html?token=...`; agreement packet emails generate this link when a custom signing URL is not provided.
 - The signing page treats boat, captain, date, start time, duration, and customer as display-only confirmed details. If those change, back office should update the booking and send a fresh signing packet.
 - Internal signing sections now use the legal copy lifted from the existing Cove Gravity Forms agreement page, with old booking-selection placeholders normalized to confirmed booking details.
