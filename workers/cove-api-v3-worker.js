@@ -43,7 +43,7 @@ async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
       const resendConfigured = Boolean(env.RESEND_API_KEY && env.BOOKING_NOTIFY_FROM);
-  return json({ ok: true, service: 'cove-api', version: '0.3.25', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
+  return json({ ok: true, service: 'cove-api', version: '0.3.26', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
 }
 
 async function settings(request, env, cors) {
@@ -700,16 +700,16 @@ async function calculateSettlement(env, booking, trip = {}, input = {}) {
   const fuelDeposit = num(input.fuelDeposit ?? input.fuel_deposit ?? booking.fuel_deposit, 0);
   const fuelAmount = num(input.fuelAmount ?? input.fuel_amount ?? trip.fuel_amount, 0);
   const additionalCharges = num(input.additionalCharges ?? input.additional_charges, 0);
-  const cleaningFee = truthy(input.cleaningFeeCharged ?? input.cleaning_fee_charged ?? trip.cleaning_fee_charged) ? num(input.cleaningFee ?? input.cleaning_fee ?? booking.cleaning_fee, 0) : 0;
-  const taxCollected = num(input.taxCollected ?? input.tax_collected ?? booking.tax_amount, roundMoney(baseFee * num(booking.tax_rate, 0)));
+  const cleaningFee = truthy(input.cleaningFeeCharged ?? input.cleaning_fee_charged ?? trip.cleaning_fee_charged ?? true) ? num(input.cleaningFee ?? input.cleaning_fee ?? booking.cleaning_fee, 0) : 0;
+  const taxOverride = nullableNum(input.taxCollected ?? input.tax_collected);
+  const taxCollected = taxOverride !== null ? taxOverride : roundMoney((baseFee + cleaningFee) * num(booking.tax_rate, 0));
   const captainPay = roundMoney(num(input.captainPay ?? input.captain_pay, actualHours * captainHourlyRate));
   const netAfterCaptain = Math.max(0, baseFee - captainPay);
   const ownerPayout = roundMoney(num(input.ownerPayout ?? input.owner_payout, netAfterCaptain * ownerSplit));
-  const coveCommission = roundMoney(num(input.coveCommission ?? input.cove_commission, netAfterCaptain - ownerPayout));
+  const coveCommission = roundMoney(num(input.coveCommission ?? input.cove_commission, netAfterCaptain * coveSplit));
   const fuelDepositRefund = roundMoney(Math.max(0, num(input.fuelDepositRefund ?? input.fuel_deposit_refund, fuelDeposit - fuelAmount - mileageCharge - additionalCharges)));
-  const retainedFuelDeposit = Math.max(0, fuelDeposit - fuelDepositRefund);
-  const grossRevenue = roundMoney(num(input.grossRevenue ?? input.gross_revenue, baseFee + cleaningFee + taxCollected + mileageCharge + additionalCharges + retainedFuelDeposit));
-  const grossProfit = roundMoney(num(input.grossProfit ?? input.gross_profit, coveCommission + cleaningFee + mileageCharge + additionalCharges + retainedFuelDeposit));
+  const grossRevenue = roundMoney(num(input.grossRevenue ?? input.gross_revenue, baseFee + cleaningFee + taxCollected + fuelDeposit + mileageCharge + additionalCharges));
+  const grossProfit = roundMoney(num(input.grossProfit ?? input.gross_profit, coveCommission));
   return { actualHours, startMiles, endMiles, billableMiles, mileageRate, mileageCharge, baseFee, cleaningFee, taxCollected, fuelDeposit, fuelAmount, fuelDepositRefund, additionalCharges, captainHourlyRate, captainPay, ownerSplit, coveSplit, ownerPayout, coveCommission, grossRevenue, grossProfit };
 }
 

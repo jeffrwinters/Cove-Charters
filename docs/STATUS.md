@@ -1,6 +1,6 @@
 # Cove Charters Status
 
-Last updated: 2026-06-30
+Last updated: 2026-07-01
 
 ## Current State
 
@@ -18,7 +18,7 @@ The active Worker file is:
 workers/cove-api-v3-worker.js
 ```
 
-The current API version is `0.3.19` after adding public boat display ordering.
+The current API version is `0.3.26` after aligning settlement math to the reviewed payout spreadsheet.
 
 ## Working End To End
 
@@ -116,7 +116,8 @@ Completed so far:
 - Confirmed/completed admin booking cards include MVP trip closeout controls for actual hours, payment status, and closeout notes. Complete Trip stamps office notes, marks the booking completed, and copies a settlement summary.
 - Admin booking cards now include an MVP settlement calculator for post-charter mileage and payout review.
 - Settlement calculator saves trip closeout and draft settlement records to D1 through `PUT /api/v1/bookings/{id}/settlement`.
-- Current settlement assumptions until the source spreadsheet is recovered/reviewed: billable miles are explicit or end miles minus start miles; mileage charge is billable miles times the D1 mileage setting; captain pay is actual hours times the D1 captain hourly rate; owner/Cove split the charter base fee after captain pay; fuel deposit refund is reduced by fuel, mileage, and additional charges.
+- Settlement math now follows the reviewed `Charges and Payout.xlsx` workbook; a formula-preserving CSV copy is stored at `docs/Charges and Payout.csv`.
+- Current settlement rules: captain pay is actual hours times the captain hourly rate; owner/Cove split the charter fee after captain pay; sales tax is calculated on charter fee plus cleaning fee; total collected includes charter fee, cleaning, tax, fuel deposit, and closeout adjustments; fuel deposit refund is reduced by fuel, mileage, and additional charges.
 - Admin Bookings has filters for status, boat, captain, date range, and text search.
 - Admin Bookings includes a master month calendar for dated booking requests; calendar entries respect the same status, boat, captain, date, and search filters.
 - Booking statuses for admin operations are `requested`, `reviewing`, `confirmed`, `completed`, `declined`, and `cancelled`.

@@ -103,14 +103,17 @@ Back office must be able to change operational details, including:
 
 ## Current MVP Settlement Formula
 
-The exact spreadsheet source for mileage/payout math has not been located in the repo yet. Until it is recovered and reviewed, the admin settlement calculator uses this conservative D1-backed formula:
+Source: `docs/Charges and Payout.csv`, exported from the `Charges and Payout.xlsx` workbook reviewed on July 1, 2026.
 
+- Captain / first mate pay = actual hours x captain hourly rate. The 2026 workbook uses `$125/hour`.
+- Net charter revenue = charter fee - captain / first mate pay.
+- Owner payout = net charter revenue x owner split. The workbook uses `85%`.
+- Cove commission = net charter revenue x Cove split. The workbook uses `15%`.
+- Cleaning fee is a standard collected line item when charged. The current workbook uses `$75`.
+- Sales tax = `(charter fee + cleaning fee) x sales tax rate`. The workbook uses `8.225%`.
+- Total collected = charter fee + cleaning fee + sales tax + fuel deposit, plus any post-charter mileage or additional charges collected through closeout.
 - Billable miles = explicit billable miles, or `ending miles - beginning miles`.
 - Mileage charge = billable miles x mileage rate.
-- Captain pay = actual hours x captain hourly rate.
-- Net charter revenue = charter base fee - captain pay.
-- Owner payout = net charter revenue x owner split.
-- Cove commission = net charter revenue - owner payout.
 - Fuel deposit refund = fuel deposit - fuel amount - mileage charge - additional charges, floored at zero.
 
-These values are saved as draft settlement records and should remain editable by back office before final payout.
+Mileage and fuel adjustments are operational closeout fields; they are not visible in the reviewed spreadsheet sections, but remain supported for back-office settlement. Settlement records should remain editable by back office before final payout.
