@@ -47,7 +47,7 @@ async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
       const resendConfigured = Boolean(env.RESEND_API_KEY && env.BOOKING_NOTIFY_FROM);
-  return json({ ok: true, service: 'cove-api', version: '0.3.31', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
+  return json({ ok: true, service: 'cove-api', version: '0.3.32', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
 }
 
 async function settings(request, env, cors) {
@@ -1260,7 +1260,9 @@ function agreementSections(booking = {}) {
       id: 'captain_service_agreement',
       title: 'Captain Service Agreement',
       summary: 'Confirms the customer selected the captain and understands captain services are separate from the vessel charter.',
-      body: `THIS CAPTAIN SERVICES AGREEMENT (this “Agreement”) is made as of ${new Date().toLocaleDateString("en-US")} by and between the Charterer signing this packet , individually and ${captainName} a USCG licensed captain (the “Captain”) And the confirmed crew member, individually (the “Crew”). If necessary additional crew members are attached to the Captain Services Agreement.
+      body: `Selected Captain: ${captainName}
+
+THIS CAPTAIN SERVICES AGREEMENT (this “Agreement”) is made as of ${new Date().toLocaleDateString("en-US")} by and between the Charterer signing this packet, individually, and ${captainName}, a USCG licensed captain (the “Captain”), and the confirmed crew member, individually (the “Crew”). If necessary additional crew members are attached to the Captain Services Agreement.
 
 1. This agreement shall cover a period of ${durationHours} on ${charterDate}. Any additional hours agreed upon by the parties hereto in writing and attached hereto, for contract as crew on the vessel.
 

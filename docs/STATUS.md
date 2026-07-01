@@ -18,7 +18,7 @@ The active Worker file is:
 workers/cove-api-v3-worker.js
 ```
 
-The current API version is `0.3.31` after adding per-boat captain priority ordering for customer selection.
+The current API version is `0.3.32` after displaying the selected captain name directly on the Captain Service Agreement.
 
 ## Working End To End
 
@@ -110,6 +110,7 @@ Completed so far:
 - Cove now has an internal public signing page at `sign.html?token=...`; agreement packet emails generate this link when a custom signing URL is not provided.
 - The signing page treats boat, captain, date, start time, duration, and customer as display-only confirmed details. If those change, back office should update the booking and send a fresh signing packet.
 - Internal signing sections now use the legal copy lifted from the existing Cove Gravity Forms agreement page, with old booking-selection placeholders normalized to confirmed booking details.
+- The Captain Service Agreement section displays the selected captain name directly, matching the old document pattern where the captain was named in the agreement opening.
 - Signing initials now carry forward after first entry, and section navigation validates the current step before moving.
 - Public signing submissions are stored in `booking_signatures` and mark the booking agreement as signed.
 - When a customer signs, Cove sends a signed-document notice to the back office and assigned captain when email is configured and the captain has an email address.
