@@ -98,9 +98,9 @@ Completed so far:
 - Admin Command Center has a Bookings inbox with status updates.
 - Admin booking cards now work as a small operations workbench: status, assigned captain, date, start time, duration, and office notes are editable in place.
 - Admin booking cards include copy-ready internal summaries plus confirmation and decline customer reply drafts.
-- Admin booking cards include quick actions for Confirm, Needs Follow-up, and Decline. These update status, stamp office notes, and copy customer-ready text where applicable.
+- Admin booking cards include quick actions for Confirm, Needs Follow-up, and Decline. Confirm now validates the required packet fields, confirms the booking, and automatically sends the customer agreement packet; Decline still copies a customer-ready decline reply.
 - Admin confirmed/completed booking cards include Send Confirmation. It calls `POST /api/v1/bookings/{id}/send-confirmation`; if Resend email sending is not configured, the admin falls back to copying the confirmation text.
-- After back-office confirmation, Admin can send a guided agreement packet with `POST /api/v1/bookings/{id}/send-agreement-packet`.
+- After back-office confirmation, Admin automatically sends a guided agreement packet with `POST /api/v1/bookings/{id}/send-agreement-packet`; the detail view also keeps a Resend Agreement action.
 - Sending an agreement packet now requires a boat, captain, date, start time, and duration. Admin saves the current booking edits before sending so date/time/captain changes are baked into the packet.
 - Booking records now track `agreement_status`, sent/signed timestamps, and an optional `signing_url`.
 - Cove now has an internal public signing page at `sign.html?token=...`; agreement packet emails generate this link when a custom signing URL is not provided.
