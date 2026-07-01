@@ -94,6 +94,9 @@ CREATE TABLE IF NOT EXISTS customers (
   email TEXT,
   phone TEXT,
   notes TEXT,
+  status TEXT NOT NULL DEFAULT 'new',
+  favorite_boat TEXT,
+  favorite_captain TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

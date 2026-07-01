@@ -21,6 +21,8 @@ export default {
       if (path.startsWith('/api/v1/owners/')) return await ownerById(request, env, cors, path.split('/').pop());
       if (path === '/api/v1/captains') return await captains(request, env, cors);
       if (path.startsWith('/api/v1/captains/')) return await captainById(request, env, cors, path.split('/').pop());
+      if (path === '/api/v1/customers') return await customers(request, env, cors);
+      if (path.startsWith('/api/v1/customers/')) return await customerById(request, env, cors, path.split('/').pop());
       if (path === '/api/v1/availability') return await availability(request, env, cors);
       if (path.startsWith('/api/v1/availability/')) return await availabilityById(request, env, cors, path.split('/').pop());
       if (path === '/api/v1/bookings') return await bookings(request, env, cors, ctx);
@@ -47,7 +49,7 @@ async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
       const resendConfigured = Boolean(env.RESEND_API_KEY && env.BOOKING_NOTIFY_FROM);
-  return json({ ok: true, service: 'cove-api', version: '0.3.32', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
+  return json({ ok: true, service: 'cove-api', version: '0.3.33', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
 }
 
 async function settings(request, env, cors) {
@@ -496,6 +498,145 @@ function outCaptain(row) {
   };
 }
 
+async function customers(request, env, cors) {
+  requireDb(env);
+  const auth = requireAdmin(request, env);
+  if (auth) return json(auth.body, auth.status, cors);
+  if (request.method === 'GET') {
+    const rows = await env.DB.prepare(`
+      SELECT cu.*,
+        (SELECT COUNT(*) FROM bookings bk WHERE bk.customer_id = cu.id) AS booking_count,
+        (SELECT MAX(COALESCE(bk.charter_date, bk.created_at)) FROM bookings bk WHERE bk.customer_id = cu.id) AS last_booking_at,
+        (SELECT b.name FROM bookings bk LEFT JOIN boats b ON b.id = bk.boat_id WHERE bk.customer_id = cu.id ORDER BY COALESCE(bk.charter_date, bk.created_at) DESC LIMIT 1) AS last_boat_name,
+        (SELECT c.name FROM bookings bk LEFT JOIN captains c ON c.id = bk.captain_id WHERE bk.customer_id = cu.id ORDER BY COALESCE(bk.charter_date, bk.created_at) DESC LIMIT 1) AS last_captain_name
+      FROM customers cu
+      ORDER BY lower(cu.last_name) ASC, lower(cu.first_name) ASC, lower(cu.email) ASC
+    `).all();
+    return json((rows.results || []).map(outCustomer), 200, cors);
+  }
+  if (request.method === 'POST') {
+    const body = await request.json();
+    const id = body.id || `customer_${crypto.randomUUID()}`;
+    await upsertCustomer(env, { ...body, id });
+    return json({ ok: true, id }, 201, cors);
+  }
+  return json({ error: 'GET or POST required' }, 405, cors);
+}
+
+async function customerById(request, env, cors, id) {
+  requireDb(env);
+  const auth = requireAdmin(request, env);
+  if (auth) return json(auth.body, auth.status, cors);
+  if (request.method === 'GET') {
+    const row = await customerRow(env, id);
+    return row ? json(outCustomer(row), 200, cors) : json({ error: 'Customer not found' }, 404, cors);
+  }
+  if (request.method === 'PUT') {
+    const body = await request.json();
+    await upsertCustomer(env, { ...body, id });
+    return json({ ok: true, id }, 200, cors);
+  }
+  if (request.method === 'DELETE') {
+    await env.DB.prepare('UPDATE bookings SET customer_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE customer_id = ?').bind(id).run();
+    await env.DB.prepare('DELETE FROM customers WHERE id = ?').bind(id).run();
+    return json({ ok: true, id }, 200, cors);
+  }
+  return json({ error: 'GET, PUT, or DELETE required' }, 405, cors);
+}
+
+async function customerRow(env, id) {
+  return await env.DB.prepare(`
+    SELECT cu.*,
+      (SELECT COUNT(*) FROM bookings bk WHERE bk.customer_id = cu.id) AS booking_count,
+      (SELECT MAX(COALESCE(bk.charter_date, bk.created_at)) FROM bookings bk WHERE bk.customer_id = cu.id) AS last_booking_at,
+      (SELECT b.name FROM bookings bk LEFT JOIN boats b ON b.id = bk.boat_id WHERE bk.customer_id = cu.id ORDER BY COALESCE(bk.charter_date, bk.created_at) DESC LIMIT 1) AS last_boat_name,
+      (SELECT c.name FROM bookings bk LEFT JOIN captains c ON c.id = bk.captain_id WHERE bk.customer_id = cu.id ORDER BY COALESCE(bk.charter_date, bk.created_at) DESC LIMIT 1) AS last_captain_name
+    FROM customers cu
+    WHERE cu.id = ?
+  `).bind(id).first();
+}
+
+async function findExistingCustomerId(env, body) {
+  const email = String(body.email || '').trim().toLowerCase();
+  const phone = normalizePhone(body.phone || '');
+  if (!email && !phone) return null;
+  const row = await env.DB.prepare(`
+    SELECT id
+    FROM customers
+    WHERE (? != '' AND lower(email) = ?)
+       OR (? != '' AND replace(replace(replace(replace(replace(replace(phone, ' ', ''), '-', ''), '(', ''), ')', ''), '.', ''), '+', '') = ?)
+    ORDER BY updated_at DESC
+    LIMIT 1
+  `).bind(email, email, phone, phone).first();
+  return row?.id || null;
+}
+
+async function upsertCustomer(env, customer) {
+  const names = splitName(customer.name, customer.firstName ?? customer.first_name, customer.lastName ?? customer.last_name);
+  await env.DB.prepare(`
+    INSERT INTO customers (
+      id, first_name, last_name, email, phone, notes, status, favorite_boat, favorite_captain, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(id) DO UPDATE SET
+      first_name = excluded.first_name,
+      last_name = excluded.last_name,
+      email = excluded.email,
+      phone = excluded.phone,
+      notes = excluded.notes,
+      status = excluded.status,
+      favorite_boat = excluded.favorite_boat,
+      favorite_captain = excluded.favorite_captain,
+      updated_at = CURRENT_TIMESTAMP
+  `).bind(
+    customer.id,
+    names.firstName || null,
+    names.lastName || null,
+    customer.email || null,
+    customer.phone || null,
+    customer.notes ?? null,
+    customer.status || 'new',
+    customer.favoriteBoat ?? customer.favorite_boat ?? null,
+    customer.favoriteCaptain ?? customer.favorite_captain ?? null
+  ).run();
+}
+
+async function touchBookingCustomer(env, id, body, names) {
+  const current = id ? await env.DB.prepare('SELECT * FROM customers WHERE id = ?').bind(id).first() : null;
+  await upsertCustomer(env, {
+    id,
+    firstName: names.firstName || current?.first_name || null,
+    lastName: names.lastName || current?.last_name || null,
+    email: body.email || current?.email || null,
+    phone: body.phone || current?.phone || null,
+    notes: current?.notes || body.customerNotes || body.notes || null,
+    status: current?.status || 'new',
+    favoriteBoat: current?.favorite_boat || null,
+    favoriteCaptain: current?.favorite_captain || null
+  });
+}
+
+function outCustomer(row) {
+  const name = [row.first_name, row.last_name].filter(Boolean).join(' ').trim();
+  return {
+    id: row.id,
+    firstName: row.first_name,
+    lastName: row.last_name,
+    name,
+    email: row.email,
+    phone: row.phone,
+    notes: row.notes,
+    status: row.status || 'new',
+    favoriteBoat: row.favorite_boat,
+    favoriteCaptain: row.favorite_captain,
+    bookingCount: Number(row.booking_count || 0),
+    lastBookingAt: row.last_booking_at,
+    lastBoatName: row.last_boat_name,
+    lastCaptainName: row.last_captain_name,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
 async function availability(request, env, cors) {
   requireDb(env);
   if (request.method === 'GET') {
@@ -606,8 +747,8 @@ async function bookings(request, env, cors, ctx) {
     const requestedStartTime = body.startTime || body.start_time || null;
     if (requestedStartTime && !isPublicBookingStartTime(requestedStartTime)) return json({ error: 'Start time must be between 9:00 AM and 6:00 PM in 30-minute increments.' }, 400, cors);
     const bookingId = body.id || `booking_${crypto.randomUUID()}`;
-    const customerId = body.customerId || `customer_${crypto.randomUUID()}`;
     const names = splitName(body.customerName, body.firstName, body.lastName);
+    const customerId = body.customerId || await findExistingCustomerId(env, body) || `customer_${crypto.randomUUID()}`;
     const price = await env.DB.prepare(`
       SELECT id, base_fee, cleaning_fee, fuel_deposit, tax_rate
       FROM boat_pricing
@@ -616,10 +757,7 @@ async function bookings(request, env, cors, ctx) {
       LIMIT 1
     `).bind(body.boatId || body.boat_id).first();
 
-    await env.DB.prepare(`
-      INSERT OR REPLACE INTO customers (id, first_name, last_name, email, phone, notes, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    `).bind(customerId, names.firstName, names.lastName, body.email || null, body.phone || null, body.customerNotes || body.notes || null).run();
+    await touchBookingCustomer(env, customerId, body, names);
 
     await env.DB.prepare(`
       INSERT INTO bookings (
@@ -1404,6 +1542,10 @@ function splitName(fullName, firstName, lastName) {
   const parts = String(fullName || '').trim().split(/\s+/).filter(Boolean);
   if (parts.length <= 1) return { firstName: parts[0] || '', lastName: '' };
   return { firstName: parts.slice(0, -1).join(' '), lastName: parts.at(-1) };
+}
+
+function normalizePhone(value) {
+  return String(value || '').replace(/\D/g, '');
 }
 
 async function sendBookingNotification(env, booking) {

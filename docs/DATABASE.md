@@ -80,6 +80,13 @@ Join table for approved boat/captain relationships.
 
 Stores customer records.
 
+Important MVP fields:
+
+- `status`: `new`, `repeat`, `vip`, or `banned`
+- `favorite_boat`
+- `favorite_captain`
+- `notes`
+
 ### bookings
 
 Customer-facing booking records.

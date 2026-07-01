@@ -18,7 +18,7 @@ The active Worker file is:
 workers/cove-api-v3-worker.js
 ```
 
-The current API version is `0.3.32` after displaying the selected captain name directly on the Captain Service Agreement.
+The current API version is `0.3.33` after moving Customers to durable D1-backed admin records.
 
 ## Working End To End
 
@@ -156,10 +156,11 @@ Completed so far:
 - Universal admin side-panel assets are loaded and available for future low-risk detail views; full editors were not replaced during the MVP merge.
 - Boats and Captains now use the shared sticky breadcrumb/save header.
 - Admin has a Customers tab in desktop and mobile navigation.
-- Customers are derived from booking records for MVP and preserve list-to-detail drill-in UX.
+- Customers are backed by durable D1 records and preserve list-to-detail drill-in UX.
 - Customer statuses supported in the UI are `new`, `repeat`, `vip`, and `banned`.
 - Banned customers show a soft red warning banner in the customer detail view.
-- Customer status/notes/profile overrides are stored in browser localStorage under `cove_customer_overrides` until a durable customer table/API is added.
+- Customer status, favorite boat/captain, and concierge notes are shared through admin-only Customer API endpoints.
+- New public booking requests reuse an existing customer row by email or phone when possible.
 
 ### Captain Images Slice
 
@@ -174,13 +175,12 @@ Completed so far:
 
 ## Current Roadmap
 
-1. Add a durable customers data model/API so Customers edits are shared across admin browsers.
-2. Add a cleaner captain-facing trip view / future captain app foundation.
-3. Turn the agreement packet workflow into real document/e-sign storage.
-4. Turn closeout/settlement notes into structured accounting records.
-5. Back office settlement workflow.
-6. Payments.
-7. SEO and public polish.
+1. Add a cleaner captain-facing trip view / future captain app foundation.
+2. Turn the agreement packet workflow into real document/e-sign storage.
+3. Turn closeout/settlement notes into structured accounting records.
+4. Back office settlement workflow.
+5. Payments.
+6. SEO and public polish.
 
 Parked idea: mobile sticky `Book This Boat` CTA on public boat detail pages. A version that appeared after the hero CTA and hid over the request form was shelved because it did not match the desired flow; revisit if the boat detail page layout changes.
 
