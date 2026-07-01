@@ -50,7 +50,7 @@ async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
   const resendConfigured = Boolean(env.RESEND_API_KEY && env.BOOKING_NOTIFY_FROM);
-  return json({ ok: true, service: 'cove-api', version: '0.3.35', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
+  return json({ ok: true, service: 'cove-api', version: '0.3.36', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
 }
 
 async function settings(request, env, cors) {
@@ -851,6 +851,34 @@ async function bookingDocuments(request, env, cors, bookingId) {
   }
 
   if (request.method === 'POST') {
+    if ((request.headers.get('Content-Type') || '').includes('multipart/form-data')) {
+      const form = await request.formData();
+      const files = form.getAll('file').filter(file => file && typeof file !== 'string');
+      if (!files.length) return json({ error: 'Missing file field' }, 400, cors);
+      const documents = [];
+      for (const file of files) {
+        const uploaded = await uploadFileToGithub(env, { file, entityType: 'booking', entitySlug: bookingId, mediaType: 'documents' });
+        const id = `doc_${crypto.randomUUID()}`;
+        await env.DB.prepare(`
+          INSERT INTO booking_documents (id, booking_id, document_type, title, url, filename, content_type, status, audience, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        `).bind(
+          id,
+          bookingId,
+          form.get('documentType') || form.get('document_type') || 'attachment',
+          form.get('title') || file.name || 'Attached file',
+          uploaded.url,
+          file.name || null,
+          file.type || null,
+          form.get('status') || 'uploaded',
+          form.get('audience') || 'office,captain'
+        ).run();
+        const row = await env.DB.prepare('SELECT * FROM booking_documents WHERE id = ?').bind(id).first();
+        documents.push(outBookingDocument(row));
+      }
+      return json({ ok: true, documents }, 201, cors);
+    }
+
     const body = await request.json();
     if (!body.url) return json({ error: 'Document URL is required' }, 400, cors);
     const id = body.id || `doc_${crypto.randomUUID()}`;
@@ -1986,16 +2014,9 @@ async function uploadMedia(request, env, cors) {
   const entityId = String(form.get('entityId') || form.get('entity_id') || form.get('entitySlug') || form.get('entity_slug') || 'unsorted');
   const entitySlug = cleanSegment(form.get('entitySlug') || form.get('entity_slug') || entityId);
   const mediaType = normalizeMediaType(form.get('mediaType') || form.get('media_type') || 'photos');
-  if (file.size > Number(env.MAX_UPLOAD_BYTES || 15728640)) return json({ error: 'File too large' }, 413, cors);
-
-  const stamp = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
-  const path = `assets/${cleanSegment(entityType)}s/${entitySlug}/${mediaType}/${stamp}-${cleanFilename(file.name || 'upload.bin')}`;
-  const response = await fetch(`https://api.github.com/repos/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/contents/${path}`, { method: 'PUT', headers: githubHeaders(env), body: JSON.stringify({ message: `Upload media: ${path}`, content: toBase64(await file.arrayBuffer()), branch: env.GITHUB_BRANCH || 'main' }) });
-  const uploaded = await response.json();
-  if (!response.ok) throw new Error(uploaded.message || JSON.stringify(uploaded));
+  const uploaded = await uploadFileToGithub(env, { file, entityType, entitySlug, mediaType });
 
   const mediaId = `media_${crypto.randomUUID()}`;
-  const publicUrl = uploaded.content?.download_url || `https://raw.githubusercontent.com/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/${env.GITHUB_BRANCH || 'main'}/${path}`;
   const title = String(form.get('title') || file.name || 'Uploaded media');
   const alt = String(form.get('alt') || title);
   const nextSort = await nextMediaSort(env, entityType, entityId, mediaType);
@@ -2005,10 +2026,20 @@ async function uploadMedia(request, env, cors) {
   await env.DB.prepare(`
     INSERT INTO media (id, entity_type, entity_id, media_type, url, title, alt, sort_order, is_cover, focal_x, focal_y, zoom)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).bind(mediaId, entityType, entityId, mediaType, publicUrl, title, alt, nextSort, shouldCover ? 1 : 0, 50, 50, 1).run();
+  `).bind(mediaId, entityType, entityId, mediaType, uploaded.url, title, alt, nextSort, shouldCover ? 1 : 0, 50, 50, 1).run();
 
   const row = await env.DB.prepare('SELECT * FROM media WHERE id = ?').bind(mediaId).first();
-  return json({ ok: true, path, url: publicUrl, media: outMedia(row) }, 200, cors);
+  return json({ ok: true, path: uploaded.path, url: uploaded.url, media: outMedia(row) }, 200, cors);
+}
+
+async function uploadFileToGithub(env, { file, entityType, entitySlug, mediaType }) {
+  if (file.size > Number(env.MAX_UPLOAD_BYTES || 15728640)) throw new Error('File too large');
+  const stamp = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
+  const path = `assets/${cleanSegment(entityType)}s/${cleanSegment(entitySlug)}/${normalizeMediaType(mediaType)}/${stamp}-${cleanFilename(file.name || 'upload.bin')}`;
+  const response = await fetch(`https://api.github.com/repos/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/contents/${path}`, { method: 'PUT', headers: githubHeaders(env), body: JSON.stringify({ message: `Upload media: ${path}`, content: toBase64(await file.arrayBuffer()), branch: env.GITHUB_BRANCH || 'main' }) });
+  const uploaded = await response.json();
+  if (!response.ok) throw new Error(uploaded.message || JSON.stringify(uploaded));
+  return { path, url: uploaded.content?.download_url || `https://raw.githubusercontent.com/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/${env.GITHUB_BRANCH || 'main'}/${path}` };
 }
 
 async function mediaById(request, env, cors, id) {

@@ -18,7 +18,7 @@ The active Worker file is:
 workers/cove-api-v3-worker.js
 ```
 
-The current API version is `0.3.35` after clarifying the captain email sent after customer signing as a confirmed booking notice.
+The current API version is `0.3.36` after adding direct booking document file uploads.
 
 ## Working End To End
 
@@ -115,7 +115,7 @@ Completed so far:
 - Public signing submissions are stored in `booking_signatures` and mark the booking agreement as signed.
 - Signed electronic packets are attached to bookings as openable/printable `signed.html?token=...` documents.
 - When a customer signs, Cove sends a confirmed-booking notice with signed record access to the back office and assigned captain when email is configured and the captain has an email address.
-- Signed charter documents can be attached to booking records through `POST /api/v1/bookings/{id}/documents`.
+- Signed charter documents and supporting files can be attached to booking records through `POST /api/v1/bookings/{id}/documents`; the endpoint accepts existing document URLs and direct multipart file uploads.
 - Booking emails use Resend REST API when `RESEND_API_KEY` and `BOOKING_NOTIFY_FROM` are configured.
 - Admin confirmed/completed bookings with an assigned captain include Copy Captain Packet and Send Captain Packet. The send action calls `POST /api/v1/bookings/{id}/send-captain-packet`, requires the assigned captain to have an email address, and attaches signed booking documents / configured bareboat template URLs when available.
 - Current MVP email sender uses the temporary `lakefrontatloto.com` domain. Revisit this configuration after Cove controls `covecharters.com`; likely target is `BOOKING_NOTIFY_FROM=bookings@covecharters.com` with replies routed to the back-office inbox.
