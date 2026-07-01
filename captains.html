@@ -24,6 +24,8 @@
     .nav{position:fixed;z-index:10;top:16px;left:50%;transform:translateX(-50%);width:min(1120px,calc(100% - 36px));display:flex;justify-content:space-between;gap:16px;align-items:center;padding:14px 18px;border-radius:999px;background:rgba(7,25,35,.86);border:1px solid rgba(255,255,255,.12);box-shadow:0 16px 42px rgba(7,25,35,.22);backdrop-filter:blur(14px)}
     .brand{font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:white;text-shadow:0 1px 10px rgba(0,0,0,.35)}
     .links{display:flex;gap:16px;align-items:center;color:white;font-weight:800;font-size:14px}
+    .links a:not(.btn){color:#f5fbfd;text-shadow:0 1px 8px rgba(0,0,0,.35)}
+    .links a:not(.btn):hover,.links a:not(.btn):focus-visible{color:white;background:rgba(255,255,255,.1)}
     .btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 18px;border-radius:999px;background:var(--sand);color:var(--navy);font-weight:900;border:0;cursor:pointer}
     .btn.dark{background:var(--navy);color:white}
     .btn.light{background:#eef6f8;color:var(--navy)}
@@ -62,8 +64,8 @@
     .cta textarea{min-height:104px}
     .form-status{color:var(--muted);line-height:1.5;margin:12px 0 0}
     footer{background:var(--navy);color:rgba(255,255,255,.72);padding:36px 0}
-    @media(max-width:900px){.captain-grid{grid-template-columns:1fr 1fr}.cta{grid-template-columns:1fr}.section-head{display:block}.section-head p{margin-top:12px}.links a:not(.btn){display:none}}
-    @media(max-width:620px){.captain-grid{grid-template-columns:1fr}.hero{padding-top:126px}.nav{top:10px}.actions .btn,.cta .btn{width:100%}.brand{font-size:13px}}
+    @media(max-width:900px){.captain-grid{grid-template-columns:1fr 1fr}.cta{grid-template-columns:1fr}.section-head{display:block}.section-head p{margin-top:12px}.nav{align-items:flex-start;border-radius:24px;flex-wrap:wrap;gap:10px}.links{width:100%;gap:8px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}.links::-webkit-scrollbar{display:none}.links a:not(.btn){display:inline-flex;align-items:center;min-height:38px;padding:0 10px;border-radius:999px;background:rgba(255,255,255,.1);white-space:nowrap}.links .btn{min-height:38px;white-space:nowrap}}
+    @media(max-width:620px){.captain-grid{grid-template-columns:1fr}.hero{padding-top:145px}.nav{top:10px}.actions .btn,.cta .btn{width:100%}.brand{font-size:13px}}
   </style>
 </head>
 <body>
