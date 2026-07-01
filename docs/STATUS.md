@@ -18,7 +18,7 @@ The active Worker file is:
 workers/cove-api-v3-worker.js
 ```
 
-The current API version is `0.3.36` after adding direct booking document file uploads.
+The current API version is `0.3.37` after adding required cancellation reasons for confirmed bookings.
 
 ## Working End To End
 
@@ -100,8 +100,8 @@ Completed so far:
 - API base URL, admin token controls, auth status, and raw API/state JSON live under API Debug instead of Command Center.
 - Admin Command Center has a Bookings inbox with status updates.
 - Admin booking cards now work as a small operations workbench: status, assigned captain, date, start time, duration, and office notes are editable in place.
-- Admin booking cards include copy-ready internal summaries plus confirmation and decline customer reply drafts.
-- Admin booking cards include quick actions for Confirm and Decline. Needs Follow-up is handled through the booking status dropdown using the existing `reviewing` workflow state. Confirm validates the required packet fields, confirms the booking, and automatically sends the customer agreement packet; Decline still copies a customer-ready decline reply.
+- Admin booking cards include confirmation and decline customer reply drafts where those workflow actions still apply.
+- Admin booking cards include quick actions for Confirm, Decline, and Cancel. Needs Follow-up is handled through the booking status dropdown using the existing `reviewing` workflow state. Confirm validates the required packet fields, confirms the booking, and automatically sends the customer agreement packet. Decline is only shown before confirmation. Confirmed bookings use Cancel instead, and cancellation requires a reason that is saved to the booking office notes and appended to the linked customer record notes.
 - Admin confirmed/completed booking cards include Send Confirmation. It calls `POST /api/v1/bookings/{id}/send-confirmation`; if Resend email sending is not configured, the admin falls back to copying the confirmation text.
 - After back-office confirmation, Admin automatically sends a guided agreement packet with `POST /api/v1/bookings/{id}/send-agreement-packet`; the detail view also keeps a Resend Agreement action.
 - Sending an agreement packet now requires a boat, captain, date, start time, and duration. Admin saves the current booking edits before sending so date/time/captain changes are baked into the packet.

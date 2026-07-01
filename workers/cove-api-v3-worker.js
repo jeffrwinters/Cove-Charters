@@ -50,7 +50,7 @@ async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
   const resendConfigured = Boolean(env.RESEND_API_KEY && env.BOOKING_NOTIFY_FROM);
-  return json({ ok: true, service: 'cove-api', version: '0.3.36', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
+  return json({ ok: true, service: 'cove-api', version: '0.3.37', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
 }
 
 async function settings(request, env, cors) {
@@ -808,6 +808,12 @@ async function bookingById(request, env, cors, id) {
     const current = await env.DB.prepare('SELECT * FROM bookings WHERE id = ?').bind(id).first();
     if (!current) return json({ error: 'Booking not found' }, 404, cors);
     const body = await request.json();
+    const nextStatus = body.status || current.status;
+    const cancellationReason = String(body.cancellationReason || body.cancellation_reason || '').trim();
+    const isNewCancellation = nextStatus === 'cancelled' && current.status !== 'cancelled';
+    if (isNewCancellation && !cancellationReason) {
+      return json({ error: 'Cancellation reason is required' }, 400, cors);
+    }
     await env.DB.prepare(`
       UPDATE bookings
       SET status = ?, paid_status = ?, captain_id = ?, charter_date = ?, start_time = ?,
@@ -816,7 +822,7 @@ async function bookingById(request, env, cors, id) {
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).bind(
-      body.status || current.status,
+      nextStatus,
       body.paidStatus || body.paid_status || current.paid_status,
       body.captainId ?? body.captain_id ?? current.captain_id,
       body.charterDate ?? body.charter_date ?? current.charter_date,
@@ -828,6 +834,15 @@ async function bookingById(request, env, cors, id) {
       body.agreementStatus ?? body.agreement_status ?? current.agreement_status ?? 'not started',
       id
     ).run();
+    if (isNewCancellation && cancellationReason && current.customer_id) {
+      const note = `[${new Date().toLocaleString('en-US', { timeZone: 'America/Chicago' })}] Booking ${id} cancelled. Reason: ${cancellationReason}`;
+      await env.DB.prepare(`
+        UPDATE customers
+        SET notes = CASE WHEN notes IS NULL OR notes = '' THEN ? ELSE notes || char(10) || ? END,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).bind(note, note, current.customer_id).run();
+    }
     const row = await env.DB.prepare(bookingSelectSql('WHERE bk.id = ?')).bind(id).first();
     return json({ ok: true, booking: (await attachBookingDocuments(env, [outBooking(row)]))[0] }, 200, cors);
   }
