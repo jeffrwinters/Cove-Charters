@@ -78,10 +78,9 @@ A trip represents what actually happened on the water.
 
 Trip closeout captures:
 
-- Start miles
-- End miles
-- Billable miles
-- Fuel
+- Miles traveled
+- Fuel charge
+- Additional charge line items
 - Cleaning
 - Damage
 - Notes
@@ -96,7 +95,7 @@ It should track:
 - Captain payout
 - Cove commission
 - Fuel deposit refund or charges
-- Mileage charges
+- Fuel charges
 - Payment status
 
 ## Media

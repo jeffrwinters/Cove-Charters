@@ -59,13 +59,10 @@ The office needs to record actual trip details after the charter.
 
 Track:
 
-- Beginning miles
-- Ending miles
-- Billable miles
+- Miles traveled
 - Mileage rate used
-- Mileage charge
-- Fuel paid by customer/captain/owner/office
-- Fuel amount
+- Fuel charge
+- Additional charge line items
 - Cleaning fee charged
 - Damage reported
 - Damage notes
@@ -87,8 +84,8 @@ Track:
 - Tax collected
 - Fuel deposit
 - Fuel deposit refund
-- Mileage charge
-- Additional charges
+- Fuel charge
+- Additional charges total and line-item detail
 
 ## Back Office Overrides
 
@@ -111,9 +108,10 @@ Source: `docs/Charges and Payout.csv`, exported from the `Charges and Payout.xls
 - Cove commission = net charter revenue x Cove split. The workbook uses `15%`.
 - Cleaning fee is a standard collected line item when charged. The current workbook uses `$75`.
 - Sales tax = `(charter fee + cleaning fee) x sales tax rate`. The workbook uses `8.225%`.
-- Total collected = charter fee + cleaning fee + sales tax + fuel deposit, plus any post-charter mileage or additional charges collected through closeout.
-- Billable miles = explicit billable miles, or `ending miles - beginning miles`.
-- Mileage charge = billable miles x mileage rate.
-- Fuel deposit refund = fuel deposit - fuel amount - mileage charge - additional charges, floored at zero.
+- Total collected = charter fee + cleaning fee + sales tax + fuel deposit, plus post-charter fuel charge and additional charges collected through closeout.
+- Miles traveled is entered directly by back office during trip closeout.
+- Fuel charge = miles traveled x mileage rate.
+- Additional charges are structured line items with descriptions and amounts.
+- Fuel deposit refund = fuel deposit - fuel charge - additional charges, floored at zero.
 
-Mileage and fuel adjustments are operational closeout fields; they are not visible in the reviewed spreadsheet sections, but remain supported for back-office settlement. Settlement records should remain editable by back office before final payout.
+Fuel charge and additional charge adjustments are operational closeout fields; they are not visible in the reviewed spreadsheet sections, but remain supported for back-office settlement. Settlement records should remain editable by back office before final payout.

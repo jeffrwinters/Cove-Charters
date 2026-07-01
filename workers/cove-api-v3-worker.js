@@ -16,6 +16,9 @@ export default {
       if (path === '/api/v1/boats/order') return await boatOrder(request, env, cors);
       if (path.match(/^\/api\/v1\/boats\/[^/]+\/captains$/)) return await boatCaptains(request, env, cors, path.split('/')[4]);
       if (path.startsWith('/api/v1/boats/')) return await boatById(request, env, cors, path.split('/').pop());
+      if (path.match(/^\/api\/v1\/owners\/[^/]+\/boats$/)) return await ownerBoats(request, env, cors, path.split('/')[4]);
+      if (path === '/api/v1/owners') return await owners(request, env, cors);
+      if (path.startsWith('/api/v1/owners/')) return await ownerById(request, env, cors, path.split('/').pop());
       if (path === '/api/v1/captains') return await captains(request, env, cors);
       if (path.startsWith('/api/v1/captains/')) return await captainById(request, env, cors, path.split('/').pop());
       if (path === '/api/v1/availability') return await availability(request, env, cors);
@@ -43,7 +46,7 @@ async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
       const resendConfigured = Boolean(env.RESEND_API_KEY && env.BOOKING_NOTIFY_FROM);
-  return json({ ok: true, service: 'cove-api', version: '0.3.27', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
+  return json({ ok: true, service: 'cove-api', version: '0.3.29', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
 }
 
 async function settings(request, env, cors) {
@@ -70,6 +73,9 @@ async function boats(request, env, cors) {
         (SELECT base_fee FROM boat_pricing WHERE boat_id = b.id AND active = 1 ORDER BY duration_hours LIMIT 1) AS starting_price,
         (SELECT plan_name FROM boat_pricing WHERE boat_id = b.id AND active = 1 ORDER BY duration_hours LIMIT 1) AS price_unit,
         (SELECT GROUP_CONCAT(captain_id) FROM boat_captains WHERE boat_id = b.id AND status = 'approved') AS approved_captain_ids,
+        o.name AS owner_name,
+        o.email AS owner_email,
+        o.phone AS owner_phone,
         (SELECT url FROM media WHERE entity_type = 'boat' AND entity_id = b.id AND media_type = 'photos' ORDER BY is_cover DESC, sort_order ASC, created_at ASC LIMIT 1) AS cover_photo_url,
         (SELECT title FROM media WHERE entity_type = 'boat' AND entity_id = b.id AND media_type = 'photos' ORDER BY is_cover DESC, sort_order ASC, created_at ASC LIMIT 1) AS cover_photo_title,
         (SELECT alt FROM media WHERE entity_type = 'boat' AND entity_id = b.id AND media_type = 'photos' ORDER BY is_cover DESC, sort_order ASC, created_at ASC LIMIT 1) AS cover_photo_alt,
@@ -77,6 +83,7 @@ async function boats(request, env, cors) {
         (SELECT focal_y FROM media WHERE entity_type = 'boat' AND entity_id = b.id AND media_type = 'photos' ORDER BY is_cover DESC, sort_order ASC, created_at ASC LIMIT 1) AS cover_photo_focal_y,
         (SELECT zoom FROM media WHERE entity_type = 'boat' AND entity_id = b.id AND media_type = 'photos' ORDER BY is_cover DESC, sort_order ASC, created_at ASC LIMIT 1) AS cover_photo_zoom
       FROM boats b
+      LEFT JOIN owners o ON o.id = b.owner_id
       ORDER BY sort_order ASC, featured DESC, name ASC
     `).all();
     return json((rows.results || []).map(outBoat), 200, cors);
@@ -112,6 +119,9 @@ async function boatById(request, env, cors, id) {
         (SELECT base_fee FROM boat_pricing WHERE boat_id = b.id AND active = 1 ORDER BY duration_hours LIMIT 1) AS starting_price,
         (SELECT plan_name FROM boat_pricing WHERE boat_id = b.id AND active = 1 ORDER BY duration_hours LIMIT 1) AS price_unit,
         (SELECT GROUP_CONCAT(captain_id) FROM boat_captains WHERE boat_id = b.id AND status = 'approved') AS approved_captain_ids,
+        o.name AS owner_name,
+        o.email AS owner_email,
+        o.phone AS owner_phone,
         (SELECT url FROM media WHERE entity_type = 'boat' AND entity_id = b.id AND media_type = 'photos' ORDER BY is_cover DESC, sort_order ASC, created_at ASC LIMIT 1) AS cover_photo_url,
         (SELECT title FROM media WHERE entity_type = 'boat' AND entity_id = b.id AND media_type = 'photos' ORDER BY is_cover DESC, sort_order ASC, created_at ASC LIMIT 1) AS cover_photo_title,
         (SELECT alt FROM media WHERE entity_type = 'boat' AND entity_id = b.id AND media_type = 'photos' ORDER BY is_cover DESC, sort_order ASC, created_at ASC LIMIT 1) AS cover_photo_alt,
@@ -119,6 +129,7 @@ async function boatById(request, env, cors, id) {
         (SELECT focal_y FROM media WHERE entity_type = 'boat' AND entity_id = b.id AND media_type = 'photos' ORDER BY is_cover DESC, sort_order ASC, created_at ASC LIMIT 1) AS cover_photo_focal_y,
         (SELECT zoom FROM media WHERE entity_type = 'boat' AND entity_id = b.id AND media_type = 'photos' ORDER BY is_cover DESC, sort_order ASC, created_at ASC LIMIT 1) AS cover_photo_zoom
       FROM boats b
+      LEFT JOIN owners o ON o.id = b.owner_id
       WHERE b.id = ? OR b.slug = ?
     `).bind(id, id).first();
     return row ? json(outBoat(row), 200, cors) : json({ error: 'Boat not found' }, 404, cors);
@@ -195,6 +206,9 @@ function outBoat(row) {
   const boat = {
     id: row.id,
     ownerId: row.owner_id,
+    ownerName: row.owner_name,
+    ownerEmail: row.owner_email,
+    ownerPhone: row.owner_phone,
     slug: row.slug,
     name: row.name,
     status: row.status,
@@ -239,6 +253,105 @@ function outBoat(row) {
     approvedCaptainIds: row.approved_captain_ids ? String(row.approved_captain_ids).split(',').filter(Boolean) : []
   };
   return { ...boat, ...marketingFields(boat) };
+}
+
+async function owners(request, env, cors) {
+  requireDb(env);
+  if (request.method === 'GET') {
+    const rows = await env.DB.prepare(`
+      SELECT o.*,
+        (SELECT COUNT(*) FROM boats b WHERE b.owner_id = o.id) AS boat_count
+      FROM owners o
+      ORDER BY status = 'active' DESC, name ASC
+    `).all();
+    return json((rows.results || []).map(outOwner), 200, cors);
+  }
+  if (request.method === 'POST') {
+    const auth = requireAdmin(request, env);
+    if (auth) return json(auth.body, auth.status, cors);
+    const owner = await request.json();
+    const id = owner.id || `owner_${crypto.randomUUID()}`;
+    await upsertOwner(env, { ...owner, id });
+    return json({ ok: true, id }, 201, cors);
+  }
+  return json({ error: 'GET or POST required' }, 405, cors);
+}
+
+async function ownerById(request, env, cors, id) {
+  requireDb(env);
+  if (request.method === 'GET') {
+    const row = await env.DB.prepare(`
+      SELECT o.*,
+        (SELECT COUNT(*) FROM boats b WHERE b.owner_id = o.id) AS boat_count
+      FROM owners o
+      WHERE o.id = ?
+    `).bind(id).first();
+    return row ? json(outOwner(row), 200, cors) : json({ error: 'Owner not found' }, 404, cors);
+  }
+  if (request.method === 'PUT') {
+    const auth = requireAdmin(request, env);
+    if (auth) return json(auth.body, auth.status, cors);
+    const owner = await request.json();
+    await upsertOwner(env, { ...owner, id });
+    return json({ ok: true, id }, 200, cors);
+  }
+  if (request.method === 'DELETE') {
+    const auth = requireAdmin(request, env);
+    if (auth) return json(auth.body, auth.status, cors);
+    await env.DB.prepare('UPDATE boats SET owner_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE owner_id = ?').bind(id).run();
+    await env.DB.prepare('DELETE FROM owners WHERE id = ?').bind(id).run();
+    return json({ ok: true, id }, 200, cors);
+  }
+  return json({ error: 'GET, PUT, or DELETE required' }, 405, cors);
+}
+
+async function ownerBoats(request, env, cors, ownerId) {
+  requireDb(env);
+  if (request.method === 'GET') {
+    const rows = await env.DB.prepare('SELECT * FROM boats WHERE owner_id = ? ORDER BY name ASC').bind(ownerId).all();
+    return json((rows.results || []).map(outBoat), 200, cors);
+  }
+  if (request.method === 'PUT') {
+    const auth = requireAdmin(request, env);
+    if (auth) return json(auth.body, auth.status, cors);
+    const body = await request.json();
+    const boatIds = unique(Array.isArray(body.boatIds) ? body.boatIds.map(String) : []);
+    await env.DB.prepare('UPDATE boats SET owner_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE owner_id = ?').bind(ownerId).run();
+    if (boatIds.length) {
+      await env.DB.batch(boatIds.map(boatId => env.DB.prepare('UPDATE boats SET owner_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').bind(ownerId, boatId)));
+    }
+    return json({ ok: true, ownerId, boatIds }, 200, cors);
+  }
+  return json({ error: 'GET or PUT required' }, 405, cors);
+}
+
+async function upsertOwner(env, owner) {
+  await env.DB.prepare(`
+    INSERT OR REPLACE INTO owners (
+      id, name, email, phone, payout_notes, status, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+  `).bind(
+    owner.id,
+    owner.name || 'New Owner',
+    owner.email || null,
+    owner.phone || null,
+    owner.payoutNotes ?? owner.payout_notes ?? null,
+    owner.status || 'active'
+  ).run();
+}
+
+function outOwner(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    phone: row.phone,
+    payoutNotes: row.payout_notes,
+    status: row.status,
+    boatCount: Number(row.boat_count || 0),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
 }
 
 async function captains(request, env, cors) {
@@ -660,10 +773,10 @@ async function bookingSettlement(request, env, cors, bookingId) {
     await env.DB.prepare(`
       INSERT OR REPLACE INTO settlements (
         id, booking_id, trip_id, captain_pay, owner_payout, cove_commission, cleaning_fee,
-        tax_collected, fuel_deposit, fuel_deposit_refund, mileage_charge, additional_charges,
+        tax_collected, fuel_deposit, fuel_deposit_refund, mileage_charge, additional_charges, additional_charges_json,
         gross_revenue, gross_profit, captain_hourly_rate, owner_split, cove_split,
         owner_paid_status, captain_paid_status, customer_paid_status, office_status, notes, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     `).bind(
       settlementId,
       bookingId,
@@ -677,6 +790,7 @@ async function bookingSettlement(request, env, cors, bookingId) {
       calculation.fuelDepositRefund,
       calculation.mileageCharge,
       calculation.additionalCharges,
+      JSON.stringify(calculation.additionalChargeItems),
       calculation.grossRevenue,
       calculation.grossProfit,
       calculation.captainHourlyRate,
@@ -709,15 +823,16 @@ async function calculateSettlement(env, booking, trip = {}, input = {}) {
   const ownerSplit = num(input.ownerSplit ?? input.owner_split ?? await setting(env, 'owner_split', 0.85), 0.85);
   const coveSplit = num(input.coveSplit ?? input.cove_split ?? await setting(env, 'cove_split', 0.15), 0.15);
   const actualHours = num(input.actualHours ?? input.actual_hours ?? trip.actual_hours ?? booking.duration_hours, 0);
-  const startMiles = nullableNum(input.startMiles ?? input.start_miles ?? trip.start_miles);
-  const endMiles = nullableNum(input.endMiles ?? input.end_miles ?? trip.end_miles);
-  const derivedMiles = startMiles !== null && endMiles !== null ? Math.max(0, endMiles - startMiles) : 0;
-  const billableMiles = num(input.billableMiles ?? input.billable_miles ?? trip.billable_miles ?? derivedMiles, derivedMiles);
+  const milesTraveled = num(input.milesTraveled ?? input.miles_traveled ?? input.billableMiles ?? input.billable_miles ?? trip.billable_miles, 0);
+  const startMiles = null;
+  const endMiles = null;
+  const billableMiles = milesTraveled;
   const mileageCharge = roundMoney(billableMiles * mileageRate);
   const baseFee = num(input.charterAmount ?? input.baseFee ?? input.base_fee ?? booking.base_fee, 0);
   const fuelDeposit = num(input.fuelDeposit ?? input.fuel_deposit ?? booking.fuel_deposit, 0);
-  const fuelAmount = num(input.fuelAmount ?? input.fuel_amount ?? trip.fuel_amount, 0);
-  const additionalCharges = num(input.additionalCharges ?? input.additional_charges, 0);
+  const fuelAmount = 0;
+  const additionalChargeItems = additionalItemsFromInput(input);
+  const additionalCharges = roundMoney(additionalChargeItems.length ? additionalChargeItems.reduce((sum, item) => sum + item.amount, 0) : num(input.additionalCharges ?? input.additional_charges, 0));
   const cleaningFee = truthy(input.cleaningFeeCharged ?? input.cleaning_fee_charged ?? trip.cleaning_fee_charged ?? true) ? num(input.cleaningFee ?? input.cleaning_fee ?? booking.cleaning_fee, 0) : 0;
   const taxOverride = nullableNum(input.taxCollected ?? input.tax_collected);
   const taxCollected = taxOverride !== null ? taxOverride : roundMoney((baseFee + cleaningFee) * num(booking.tax_rate, 0));
@@ -728,7 +843,22 @@ async function calculateSettlement(env, booking, trip = {}, input = {}) {
   const fuelDepositRefund = roundMoney(Math.max(0, num(input.fuelDepositRefund ?? input.fuel_deposit_refund, fuelDeposit - fuelAmount - mileageCharge - additionalCharges)));
   const grossRevenue = roundMoney(num(input.grossRevenue ?? input.gross_revenue, baseFee + cleaningFee + taxCollected + fuelDeposit + mileageCharge + additionalCharges));
   const grossProfit = roundMoney(num(input.grossProfit ?? input.gross_profit, coveCommission));
-  return { actualHours, startMiles, endMiles, billableMiles, mileageRate, mileageCharge, baseFee, cleaningFee, taxCollected, fuelDeposit, fuelAmount, fuelDepositRefund, additionalCharges, captainHourlyRate, captainPay, ownerSplit, coveSplit, ownerPayout, coveCommission, grossRevenue, grossProfit };
+  return { actualHours, startMiles, endMiles, milesTraveled, billableMiles, mileageRate, mileageCharge, baseFee, cleaningFee, taxCollected, fuelDeposit, fuelAmount, fuelDepositRefund, additionalCharges, additionalChargeItems, captainHourlyRate, captainPay, ownerSplit, coveSplit, ownerPayout, coveCommission, grossRevenue, grossProfit };
+}
+
+function additionalItemsFromInput(input = {}) {
+  const raw = input.additionalChargeItems ?? input.additional_charge_items ?? input.additionalChargesJson ?? input.additional_charges_json;
+  if (Array.isArray(raw)) return normalizeAdditionalItems(raw);
+  if (typeof raw === 'string' && raw.trim()) {
+    try { return normalizeAdditionalItems(JSON.parse(raw)); } catch { return []; }
+  }
+  return [];
+}
+
+function normalizeAdditionalItems(items) {
+  return (Array.isArray(items) ? items : [])
+    .map(item => ({ description: String(item.description || item.label || '').trim(), amount: roundMoney(num(item.amount, 0)) }))
+    .filter(item => item.description || item.amount);
 }
 
 function outTrip(row) {
@@ -769,6 +899,8 @@ function outSettlement(row) {
     fuelDepositRefund: row.fuel_deposit_refund,
     mileageCharge: row.mileage_charge,
     additionalCharges: row.additional_charges,
+    additionalChargeItems: additionalItemsFromInput({ additional_charges_json: row.additional_charges_json }),
+    additionalChargesJson: row.additional_charges_json,
     grossRevenue: row.gross_revenue,
     grossProfit: row.gross_profit,
     captainHourlyRate: row.captain_hourly_rate,

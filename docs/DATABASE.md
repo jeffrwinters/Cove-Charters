@@ -129,6 +129,8 @@ Operational trip closeout record for what actually happened on the water.
 
 Financial settlement record for owner, captain, Cove, and customer adjustments.
 
+Additional charge line items are stored in `additional_charges_json`; `additional_charges` remains the summed amount for reporting and compatibility.
+
 ### media
 
 Generic media table used by boats and captains.

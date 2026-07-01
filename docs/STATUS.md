@@ -113,11 +113,12 @@ Completed so far:
 - Current MVP email sender uses the temporary `lakefrontatloto.com` domain. Revisit this configuration after Cove controls `covecharters.com`; likely target is `BOOKING_NOTIFY_FROM=bookings@covecharters.com` with replies routed to the back-office inbox.
 - Agreement handling is intentionally post-confirmation: customer booking requests stay lightweight, then back office sends a guided document packet and attaches signed documents to the booking for office/captain access.
 - Source legal copy came from the existing Cove multi-step agreement page, even though all steps share one URL; final business/legal review is still needed before production reliance.
-- Confirmed/completed admin booking cards include MVP trip closeout controls for actual hours, payment status, and closeout notes. Complete Trip stamps office notes, marks the booking completed, and copies a settlement summary.
-- Admin booking cards now include an MVP settlement calculator for post-charter mileage and payout review.
+- Confirmed/completed admin booking cards include MVP trip closeout controls for actual hours, miles traveled, payment status, additional charge line items, and closeout notes. Complete Trip stamps office notes, marks the booking completed, and copies a settlement summary.
+- Admin booking cards now include an MVP settlement calculator for post-charter fuel charge and payout review.
 - Settlement calculator saves trip closeout and draft settlement records to D1 through `PUT /api/v1/bookings/{id}/settlement`.
 - Settlement math now follows the reviewed `Charges and Payout.xlsx` workbook; a formula-preserving CSV copy is stored at `docs/Charges and Payout.csv`.
-- Current settlement rules: captain pay is actual hours times the captain hourly rate; owner/Cove split the charter fee after captain pay; sales tax is calculated on charter fee plus cleaning fee; total collected includes charter fee, cleaning, tax, fuel deposit, and closeout adjustments; fuel deposit refund is reduced by fuel, mileage, and additional charges.
+- Current settlement rules: captain pay is actual hours times the captain hourly rate; owner/Cove split the charter fee after captain pay; sales tax is calculated on charter fee plus cleaning fee; total collected includes charter fee, cleaning, tax, fuel deposit, fuel charge, and additional charge line items; fuel deposit refund is reduced by fuel charge and additional charges.
+- Admin now includes a basic Owners manager. Boats can be assigned to an owner from the Boat editor dropdown or from the Owner manager's owned-boats checklist.
 - Admin Bookings has filters for status, boat, captain, date range, and text search.
 - Admin Bookings includes a master month calendar for dated booking requests; calendar entries respect the same status, boat, captain, date, and search filters.
 - Booking statuses for admin operations are `requested`, `reviewing`, `confirmed`, `completed`, `declined`, and `cancelled`.

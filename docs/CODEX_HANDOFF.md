@@ -80,13 +80,10 @@ The Booking Requests slice is now useful for MVP back-office triage:
 
 Trips track:
 
-- Start miles
-- End miles
-- Billable miles
-- Mileage charge
+- Miles traveled
+- Fuel charge
 - Cleaning fee
-- Fuel payer
-- Fuel amount
+- Additional charge line items
 - Damage notes
 - Captain notes
 - Office notes
