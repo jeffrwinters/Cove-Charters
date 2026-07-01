@@ -96,15 +96,7 @@ database_name = "cove-production"
 
 ## Booking Email Notifications
 
-Booking requests save successfully even when email is not configured. To enable email alerts, Cloudflare Email Sending must be enabled for the sending domain and the Worker must have an email binding.
-
-Expected Worker binding:
-
-```toml
-send_email = [
-  { name = "EMAIL" }
-]
-```
+Booking requests save successfully even when email is not configured. Current MVP transactional email uses Resend through `RESEND_API_KEY`.
 
 Expected Worker variables:
 
@@ -113,9 +105,13 @@ BOOKING_NOTIFY_TO = "ops@example.com"
 BOOKING_NOTIFY_FROM = "bookings@yourdomain.com"
 BOOKING_NOTIFY_FROM_NAME = "Cove Charters"
 ADMIN_URL = "https://jeffrwinters.github.io/Cove-Charters/admin.html"
+BAREBOAT_AGREEMENT_URL = "https://example.com/bareboat-charter-agreement.pdf"
+BAREBOAT_AGREEMENT_FILENAME = "bareboat-charter-agreement.pdf"
+CHARTER_RULES_URL = "https://example.com/charter-rules.pdf"
+CHARTER_RULES_FILENAME = "charter-rules.pdf"
 ```
 
-`BOOKING_NOTIFY_FROM` must use a domain onboarded in Cloudflare Email Sending. `/api/v1/health` reports `bookingEmail: true` when the binding and required variables are present.
+`BOOKING_NOTIFY_FROM` must use a domain verified in Resend. Agreement attachment URLs are optional; when present, Resend receives them as hosted attachments. `/api/v1/health` reports `bookingEmail: true` when Resend and notification variables are present.
 
 ## API URL
 

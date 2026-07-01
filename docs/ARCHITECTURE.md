@@ -39,6 +39,16 @@ Current core endpoints:
 - `GET /api/v1/media/{id}`
 - `PUT /api/v1/media/{id}`
 - `DELETE /api/v1/media/{id}`
+- `GET /api/v1/bookings`
+- `POST /api/v1/bookings`
+- `GET /api/v1/bookings/{id}`
+- `PUT /api/v1/bookings/{id}`
+- `DELETE /api/v1/bookings/{id}`
+- `POST /api/v1/bookings/{id}/send-confirmation`
+- `POST /api/v1/bookings/{id}/send-agreement-packet`
+- `POST /api/v1/bookings/{id}/send-captain-packet`
+- `GET /api/v1/bookings/{id}/documents`
+- `POST /api/v1/bookings/{id}/documents`
 
 Public reads can remain public where appropriate. Admin writes require `Authorization: Bearer <ADMIN_TOKEN>`.
 

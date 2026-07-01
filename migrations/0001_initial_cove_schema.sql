@@ -116,12 +116,31 @@ CREATE TABLE IF NOT EXISTS bookings (
   tax_amount REAL NOT NULL DEFAULT 0,
   total_collected REAL NOT NULL DEFAULT 0,
   office_notes TEXT,
+  agreement_status TEXT NOT NULL DEFAULT 'not started',
+  agreement_sent_at TEXT,
+  agreement_signed_at TEXT,
+  signing_url TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (customer_id) REFERENCES customers(id),
   FOREIGN KEY (boat_id) REFERENCES boats(id),
   FOREIGN KEY (captain_id) REFERENCES captains(id),
   FOREIGN KEY (pricing_id) REFERENCES boat_pricing(id)
+);
+
+CREATE TABLE IF NOT EXISTS booking_documents (
+  id TEXT PRIMARY KEY,
+  booking_id TEXT NOT NULL,
+  document_type TEXT NOT NULL DEFAULT 'agreement',
+  title TEXT NOT NULL,
+  url TEXT NOT NULL,
+  filename TEXT,
+  content_type TEXT,
+  status TEXT NOT NULL DEFAULT 'uploaded',
+  audience TEXT NOT NULL DEFAULT 'office',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (booking_id) REFERENCES bookings(id)
 );
 
 CREATE TABLE IF NOT EXISTS trips (
@@ -242,6 +261,7 @@ CREATE INDEX IF NOT EXISTS idx_boats_status ON boats(status);
 CREATE INDEX IF NOT EXISTS idx_boat_pricing_boat ON boat_pricing(boat_id);
 CREATE INDEX IF NOT EXISTS idx_bookings_date ON bookings(charter_date);
 CREATE INDEX IF NOT EXISTS idx_bookings_boat ON bookings(boat_id);
+CREATE INDEX IF NOT EXISTS idx_booking_documents_booking ON booking_documents(booking_id);
 CREATE INDEX IF NOT EXISTS idx_trips_booking ON trips(booking_id);
 CREATE INDEX IF NOT EXISTS idx_settlements_booking ON settlements(booking_id);
 CREATE INDEX IF NOT EXISTS idx_media_entity ON media(entity_type, entity_id);

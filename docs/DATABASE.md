@@ -77,6 +77,28 @@ Customer-facing booking records.
 
 Booking should snapshot price/settings values used at booking time.
 
+Agreement workflow fields:
+
+- `agreement_status`
+- `agreement_sent_at`
+- `agreement_signed_at`
+- `signing_url`
+
+### booking_documents
+
+Stores documents attached to a booking, including signed bareboat agreements.
+
+Important fields:
+
+- `booking_id`
+- `document_type`
+- `title`
+- `url`
+- `filename`
+- `content_type`
+- `status`
+- `audience`
+
 ### trips
 
 Operational trip closeout record for what actually happened on the water.

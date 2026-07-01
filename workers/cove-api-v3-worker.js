@@ -21,6 +21,8 @@ export default {
       if (path === '/api/v1/availability') return await availability(request, env, cors);
       if (path.startsWith('/api/v1/availability/')) return await availabilityById(request, env, cors, path.split('/').pop());
       if (path === '/api/v1/bookings') return await bookings(request, env, cors, ctx);
+      if (path.match(/^\/api\/v1\/bookings\/[^/]+\/documents$/)) return await bookingDocuments(request, env, cors, path.split('/')[4]);
+      if (path.match(/^\/api\/v1\/bookings\/[^/]+\/send-agreement-packet$/)) return await sendAgreementPacket(request, env, cors, path.split('/')[4]);
       if (path.match(/^\/api\/v1\/bookings\/[^/]+\/send-confirmation$/)) return await sendBookingConfirmation(request, env, cors, path.split('/')[4]);
       if (path.match(/^\/api\/v1\/bookings\/[^/]+\/send-captain-packet$/)) return await sendCaptainPacket(request, env, cors, path.split('/')[4]);
       if (path.startsWith('/api/v1/bookings/')) return await bookingById(request, env, cors, path.split('/').pop());
@@ -39,7 +41,7 @@ async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
   const resendConfigured = Boolean(env.RESEND_API_KEY && env.BOOKING_NOTIFY_FROM);
-  return json({ ok: true, service: 'cove-api', version: '0.3.19', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
+  return json({ ok: true, service: 'cove-api', version: '0.3.20', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
 }
 
 async function settings(request, env, cors) {
@@ -438,7 +440,7 @@ async function bookings(request, env, cors, ctx) {
   requireDb(env);
   if (request.method === 'GET') {
     const rows = await env.DB.prepare(bookingSelectSql('ORDER BY bk.created_at DESC')).all();
-    return json((rows.results || []).map(outBooking), 200, cors);
+    return json(await attachBookingDocuments(env, (rows.results || []).map(outBooking)), 200, cors);
   }
   if (request.method === 'POST') {
     const body = await request.json();
@@ -490,7 +492,7 @@ async function bookings(request, env, cors, ctx) {
     const booking = outBooking(row);
     const emailTask = sendBookingNotification(env, booking).catch(error => console.error('Booking notification failed', error));
     if (ctx?.waitUntil) ctx.waitUntil(emailTask); else await emailTask;
-    return json({ ok: true, id: bookingId, booking }, 201, cors);
+    return json({ ok: true, id: bookingId, booking: (await attachBookingDocuments(env, [booking]))[0] }, 201, cors);
   }
   return json({ error: 'GET or POST required' }, 405, cors);
 }
@@ -499,7 +501,7 @@ async function bookingById(request, env, cors, id) {
   requireDb(env);
   if (request.method === 'GET') {
     const row = await env.DB.prepare(bookingSelectSql('WHERE bk.id = ?')).bind(id).first();
-    return row ? json(outBooking(row), 200, cors) : json({ error: 'Booking not found' }, 404, cors);
+    return row ? json((await attachBookingDocuments(env, [outBooking(row)]))[0], 200, cors) : json({ error: 'Booking not found' }, 404, cors);
   }
 
   const auth = requireAdmin(request, env);
@@ -512,7 +514,9 @@ async function bookingById(request, env, cors, id) {
     await env.DB.prepare(`
       UPDATE bookings
       SET status = ?, paid_status = ?, captain_id = ?, charter_date = ?, start_time = ?,
-        duration_hours = ?, office_notes = ?, updated_at = CURRENT_TIMESTAMP
+        duration_hours = ?, office_notes = ?, agreement_status = ?, signing_url = ?,
+        agreement_signed_at = CASE WHEN ? = 'signed' AND agreement_signed_at IS NULL THEN CURRENT_TIMESTAMP ELSE agreement_signed_at END,
+        updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).bind(
       body.status || current.status,
@@ -522,10 +526,13 @@ async function bookingById(request, env, cors, id) {
       body.startTime ?? body.start_time ?? current.start_time,
       Number(body.durationHours ?? body.duration_hours ?? current.duration_hours ?? 4),
       body.officeNotes ?? body.office_notes ?? current.office_notes,
+      body.agreementStatus ?? body.agreement_status ?? current.agreement_status ?? 'not started',
+      body.signingUrl ?? body.signing_url ?? current.signing_url,
+      body.agreementStatus ?? body.agreement_status ?? current.agreement_status ?? 'not started',
       id
     ).run();
     const row = await env.DB.prepare(bookingSelectSql('WHERE bk.id = ?')).bind(id).first();
-    return json({ ok: true, booking: outBooking(row) }, 200, cors);
+    return json({ ok: true, booking: (await attachBookingDocuments(env, [outBooking(row)]))[0] }, 200, cors);
   }
 
   if (request.method === 'DELETE') {
@@ -536,6 +543,46 @@ async function bookingById(request, env, cors, id) {
   return json({ error: 'GET, PUT, or DELETE required' }, 405, cors);
 }
 
+async function bookingDocuments(request, env, cors, bookingId) {
+  requireDb(env);
+  const auth = requireAdmin(request, env);
+  if (auth) return json(auth.body, auth.status, cors);
+
+  if (request.method === 'GET') {
+    const rows = await env.DB.prepare('SELECT * FROM booking_documents WHERE booking_id = ? ORDER BY created_at DESC').bind(bookingId).all();
+    return json((rows.results || []).map(outBookingDocument), 200, cors);
+  }
+
+  if (request.method === 'POST') {
+    const body = await request.json();
+    if (!body.url) return json({ error: 'Document URL is required' }, 400, cors);
+    const id = body.id || `doc_${crypto.randomUUID()}`;
+    await env.DB.prepare(`
+      INSERT INTO booking_documents (id, booking_id, document_type, title, url, filename, content_type, status, audience, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    `).bind(
+      id,
+      bookingId,
+      body.documentType || body.document_type || 'agreement',
+      body.title || 'Signed charter document',
+      body.url,
+      body.filename || null,
+      body.contentType || body.content_type || null,
+      body.status || 'uploaded',
+      body.audience || 'office'
+    ).run();
+
+    if (String(body.status || '').toLowerCase() === 'signed') {
+      await env.DB.prepare('UPDATE bookings SET agreement_status = ?, agreement_signed_at = COALESCE(agreement_signed_at, CURRENT_TIMESTAMP), updated_at = CURRENT_TIMESTAMP WHERE id = ?').bind('signed', bookingId).run();
+    }
+
+    const row = await env.DB.prepare('SELECT * FROM booking_documents WHERE id = ?').bind(id).first();
+    return json({ ok: true, document: outBookingDocument(row) }, 201, cors);
+  }
+
+  return json({ error: 'GET or POST required' }, 405, cors);
+}
+
 async function sendBookingConfirmation(request, env, cors, id) {
   requireDb(env);
   const auth = requireAdmin(request, env);
@@ -544,7 +591,7 @@ async function sendBookingConfirmation(request, env, cors, id) {
 
   const row = await env.DB.prepare(bookingSelectSql('WHERE bk.id = ?')).bind(id).first();
   if (!row) return json({ error: 'Booking not found' }, 404, cors);
-  const booking = outBooking(row);
+  const booking = (await attachBookingDocuments(env, [outBooking(row)]))[0];
   if (!booking.email) return json({ error: 'Booking has no customer email address' }, 400, cors);
   if (!env.RESEND_API_KEY || !env.BOOKING_NOTIFY_FROM) {
     return json({ ok: false, sent: false, configured: false, provider: 'resend', error: 'Customer email is not configured' }, 501, cors);
@@ -561,6 +608,34 @@ async function sendBookingConfirmation(request, env, cors, id) {
   return json({ ok: true, sent: true, result }, 200, cors);
 }
 
+async function sendAgreementPacket(request, env, cors, id) {
+  requireDb(env);
+  const auth = requireAdmin(request, env);
+  if (auth) return json(auth.body, auth.status, cors);
+  if (request.method !== 'POST') return json({ error: 'POST required' }, 405, cors);
+
+  const row = await env.DB.prepare(bookingSelectSql('WHERE bk.id = ?')).bind(id).first();
+  if (!row) return json({ error: 'Booking not found' }, 404, cors);
+  const booking = (await attachBookingDocuments(env, [outBooking(row)]))[0];
+  if (!booking.email) return json({ error: 'Booking has no customer email address' }, 400, cors);
+  if (!env.RESEND_API_KEY || !env.BOOKING_NOTIFY_FROM) {
+    return json({ ok: false, sent: false, configured: false, provider: 'resend', error: 'Customer email is not configured' }, 501, cors);
+  }
+
+  const body = await request.json().catch(() => ({}));
+  const signingUrl = body.signingUrl || body.signing_url || booking.signingUrl || env.AGREEMENT_SIGNING_URL || '';
+  const result = await sendCustomerAgreementPacket(env, { ...booking, signingUrl });
+  const note = `[${new Date().toLocaleString('en-US', { timeZone: 'America/Chicago' })}] Agreement packet sent to ${booking.email}${signingUrl ? ` (${signingUrl})` : ''}`;
+  await env.DB.prepare(`
+    UPDATE bookings
+    SET agreement_status = ?, signing_url = COALESCE(?, signing_url), agreement_sent_at = CURRENT_TIMESTAMP,
+      office_notes = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).bind('sent', signingUrl || null, [booking.officeNotes, note].filter(Boolean).join('\n'), id).run();
+
+  return json({ ok: true, sent: true, result }, 200, cors);
+}
+
 async function sendCaptainPacket(request, env, cors, id) {
   requireDb(env);
   const auth = requireAdmin(request, env);
@@ -569,7 +644,7 @@ async function sendCaptainPacket(request, env, cors, id) {
 
   const row = await env.DB.prepare(bookingSelectSql('WHERE bk.id = ?')).bind(id).first();
   if (!row) return json({ error: 'Booking not found' }, 404, cors);
-  const booking = outBooking(row);
+  const booking = (await attachBookingDocuments(env, [outBooking(row)]))[0];
   if (!booking.captainId) return json({ error: 'Booking does not have an assigned captain' }, 400, cors);
   if (!booking.captainEmail) return json({ error: 'Assigned captain does not have an email address' }, 400, cors);
   if (!env.RESEND_API_KEY || !env.BOOKING_NOTIFY_FROM) {
@@ -629,6 +704,39 @@ function outBooking(row) {
     taxAmount: row.tax_amount,
     totalCollected: row.total_collected,
     officeNotes: row.office_notes,
+    agreementStatus: row.agreement_status || 'not started',
+    agreementSentAt: row.agreement_sent_at,
+    agreementSignedAt: row.agreement_signed_at,
+    signingUrl: row.signing_url,
+    documents: [],
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+async function attachBookingDocuments(env, bookings) {
+  if (!bookings.length) return bookings;
+  const ids = bookings.map(b => b.id);
+  const placeholders = ids.map(() => '?').join(',');
+  const rows = await env.DB.prepare(`SELECT * FROM booking_documents WHERE booking_id IN (${placeholders}) ORDER BY created_at DESC`).bind(...ids).all();
+  const byBooking = new Map(ids.map(id => [id, []]));
+  for (const row of rows.results || []) {
+    byBooking.get(row.booking_id)?.push(outBookingDocument(row));
+  }
+  return bookings.map(booking => ({ ...booking, documents: byBooking.get(booking.id) || [] }));
+}
+
+function outBookingDocument(row) {
+  return {
+    id: row.id,
+    bookingId: row.booking_id,
+    documentType: row.document_type,
+    title: row.title,
+    url: row.url,
+    filename: row.filename,
+    contentType: row.content_type,
+    status: row.status,
+    audience: row.audience,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -690,7 +798,7 @@ async function sendCustomerConfirmation(env, booking) {
     <p>Hi ${escapeHtml(booking.customerName || 'there')},</p>
     <p>We can confirm your charter request.</p>
     <p><strong>Boat:</strong> ${escapeHtml(booking.boatName || booking.boatId)}<br><strong>Date:</strong> ${escapeHtml(booking.charterDate || 'TBD')}<br><strong>Start:</strong> ${escapeHtml(booking.startTime || 'TBD')}<br><strong>Duration:</strong> ${escapeHtml(booking.durationHours || 'TBD')} hours<br><strong>Captain:</strong> ${escapeHtml(booking.captainName || 'Captain TBD')}</p>
-    <p>Our back office will follow up with the remaining agreement and payment details.</p>
+    <p>Next, Cove will guide you through the required charter documents. Your booking is not ready for departure until those documents are complete.</p>
     <p>Please reply with any questions or changes.</p>
   `;
   return await sendResendEmail(env, {
@@ -699,6 +807,28 @@ async function sendCustomerConfirmation(env, booking) {
     subject,
     text: lines.join('\n'),
     html
+  });
+}
+
+async function sendCustomerAgreementPacket(env, booking) {
+  const subject = `Cove Charters documents to complete: ${booking.boatName || booking.boatId}`;
+  const lines = agreementPacketLines(booking);
+  const signingLine = booking.signingUrl ? `<p><strong>Start here:</strong> <a href="${escapeHtml(booking.signingUrl)}">Open your document packet</a></p>` : '<p>Cove will send the signing link as soon as the document packet is ready.</p>';
+  const html = `
+    <h2>Your Cove Charters document packet</h2>
+    <p>Hi ${escapeHtml(booking.customerName || 'there')},</p>
+    <p>Your charter has been accepted by the Cove back office. Please complete the required documents before your trip.</p>
+    ${signingLine}
+    <p><strong>Boat:</strong> ${escapeHtml(booking.boatName || booking.boatId)}<br><strong>Date:</strong> ${escapeHtml(booking.charterDate || 'TBD')}<br><strong>Start:</strong> ${escapeHtml(booking.startTime || 'TBD')}<br><strong>Captain:</strong> ${escapeHtml(booking.captainName || 'Captain TBD')}</p>
+    <p>After the documents are signed, Cove will attach the completed copies to your charter record and provide the captain with the required bareboat agreement copy.</p>
+  `;
+  return await sendResendEmail(env, {
+    to: booking.email,
+    reply_to: env.BOOKING_REPLY_TO || env.BOOKING_NOTIFY_FROM,
+    subject,
+    text: lines.join('\n'),
+    html,
+    attachments: templateAgreementAttachments(env)
   });
 }
 
@@ -721,7 +851,8 @@ async function sendCaptainTripPacket(env, booking) {
     reply_to: env.BOOKING_REPLY_TO || env.BOOKING_NOTIFY_FROM,
     subject,
     text: lines.join('\n'),
-    html
+    html,
+    attachments: captainPacketAttachments(env, booking)
   });
 }
 
@@ -756,9 +887,27 @@ function customerConfirmationLines(booking) {
     `Duration: ${booking.durationHours || 'TBD'} hours`,
     `Captain: ${booking.captainName || 'Captain TBD'}`,
     ``,
-    `Our back office will follow up with the remaining agreement and payment details.`,
+    `Next, Cove will guide you through the required charter documents.`,
+    `Your booking is not ready for departure until those documents are complete.`,
     ``,
     `Please reply with any questions or changes.`
+  ];
+}
+
+function agreementPacketLines(booking) {
+  return [
+    `Hi ${booking.customerName || 'there'},`,
+    ``,
+    `Your charter has been accepted by the Cove back office. Please complete the required documents before your trip.`,
+    booking.signingUrl ? `Start here: ${booking.signingUrl}` : `Cove will send the signing link as soon as the document packet is ready.`,
+    ``,
+    `Boat: ${booking.boatName || booking.boatId}`,
+    `Date: ${booking.charterDate || 'TBD'}`,
+    `Start time: ${booking.startTime || 'TBD'}`,
+    `Duration: ${booking.durationHours || 'TBD'} hours`,
+    `Captain: ${booking.captainName || 'Captain TBD'}`,
+    ``,
+    `After the documents are signed, Cove will attach the completed copies to your charter record and provide the captain with the required bareboat agreement copy.`
   ];
 }
 
@@ -783,6 +932,26 @@ function captainPacketLines(booking) {
     ``,
     `Back office will send updates if agreement, payment, weather, or schedule details change.`
   ];
+}
+
+function templateAgreementAttachments(env) {
+  return [
+    env.BAREBOAT_AGREEMENT_URL ? { path: env.BAREBOAT_AGREEMENT_URL, filename: env.BAREBOAT_AGREEMENT_FILENAME || 'bareboat-charter-agreement.pdf' } : null,
+    env.CHARTER_RULES_URL ? { path: env.CHARTER_RULES_URL, filename: env.CHARTER_RULES_FILENAME || 'charter-rules.pdf' } : null
+  ].filter(Boolean);
+}
+
+function captainPacketAttachments(env, booking) {
+  const signedDocs = (booking.documents || [])
+    .filter(doc => ['signed', 'final'].includes(String(doc.status || '').toLowerCase()) || String(doc.documentType || '').includes('agreement'))
+    .filter(doc => doc.url)
+    .map(doc => ({ path: doc.url, filename: doc.filename || safeAttachmentName(doc.title, doc.documentType) }));
+  return [...templateAgreementAttachments(env), ...signedDocs];
+}
+
+function safeAttachmentName(title, fallback = 'document') {
+  const base = String(title || fallback || 'document').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'document';
+  return base.endsWith('.pdf') ? base : `${base}.pdf`;
 }
 
 function escapeHtml(value) {
