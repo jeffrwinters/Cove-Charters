@@ -18,7 +18,7 @@ The active Worker file is:
 workers/cove-api-v3-worker.js
 ```
 
-The current API version is `0.3.18` after adding the protected captain trip packet endpoint.
+The current API version is `0.3.19` after adding public boat display ordering.
 
 ## Working End To End
 
@@ -27,6 +27,8 @@ The current API version is `0.3.18` after adding the protected captain trip pack
 - Public homepage loads boat records from `GET /api/v1/boats`.
 - Public boat detail can resolve boat records by id or slug.
 - Admin Command Center can create, edit, and delete boat records through D1.
+- Admin Boats can drag/drop boat cards to control public fleet display order via `boats.sort_order`.
+- Public homepage fleet cards render in `sortOrder` order.
 - Boat pricing is read from `boat_pricing` and returned as `startingPrice` and `priceUnit`.
 - Admin writes require `Authorization: Bearer <ADMIN_TOKEN>`.
 

@@ -13,6 +13,7 @@ export default {
         return await importSeed(env, cors);
       }
       if (path === '/api/v1/boats') return await boats(request, env, cors);
+      if (path === '/api/v1/boats/order') return await boatOrder(request, env, cors);
       if (path.match(/^\/api\/v1\/boats\/[^/]+\/captains$/)) return await boatCaptains(request, env, cors, path.split('/')[4]);
       if (path.startsWith('/api/v1/boats/')) return await boatById(request, env, cors, path.split('/').pop());
       if (path === '/api/v1/captains') return await captains(request, env, cors);
@@ -38,7 +39,7 @@ async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
   const resendConfigured = Boolean(env.RESEND_API_KEY && env.BOOKING_NOTIFY_FROM);
-  return json({ ok: true, service: 'cove-api', version: '0.3.18', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
+  return json({ ok: true, service: 'cove-api', version: '0.3.19', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
 }
 
 async function settings(request, env, cors) {
@@ -69,7 +70,7 @@ async function boats(request, env, cors) {
         (SELECT title FROM media WHERE entity_type = 'boat' AND entity_id = b.id AND media_type = 'photos' ORDER BY is_cover DESC, sort_order ASC, created_at ASC LIMIT 1) AS cover_photo_title,
         (SELECT alt FROM media WHERE entity_type = 'boat' AND entity_id = b.id AND media_type = 'photos' ORDER BY is_cover DESC, sort_order ASC, created_at ASC LIMIT 1) AS cover_photo_alt
       FROM boats b
-      ORDER BY featured DESC, name ASC
+      ORDER BY sort_order ASC, featured DESC, name ASC
     `).all();
     return json((rows.results || []).map(outBoat), 200, cors);
   }
@@ -82,6 +83,18 @@ async function boats(request, env, cors) {
     return json({ ok: true, id }, 201, cors);
   }
   return json({ error: 'GET or POST required' }, 405, cors);
+}
+
+async function boatOrder(request, env, cors) {
+  requireDb(env);
+  if (request.method !== 'PUT') return json({ error: 'PUT required' }, 405, cors);
+  const auth = requireAdmin(request, env);
+  if (auth) return json(auth.body, auth.status, cors);
+  const body = await request.json();
+  const boatIds = Array.isArray(body.boatIds) ? body.boatIds : [];
+  if (!boatIds.length) return json({ error: 'boatIds array required' }, 400, cors);
+  await env.DB.batch(boatIds.map((id, index) => env.DB.prepare('UPDATE boats SET sort_order = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').bind(index, id)));
+  return json({ ok: true, boatIds }, 200, cors);
 }
 
 async function boatById(request, env, cors, id) {
@@ -137,8 +150,8 @@ async function upsertBoat(env, boat) {
     INSERT OR REPLACE INTO boats (
       id, owner_id, slug, name, status, lifecycle_status, booking_enabled, featured,
       home_port, length_ft, capacity, bedrooms, bathrooms, make, model, boat_type,
-      short_description, source_listing_url, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      short_description, source_listing_url, sort_order, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
   `).bind(
     boat.id,
     boat.ownerId || null,
@@ -157,7 +170,8 @@ async function upsertBoat(env, boat) {
     boat.model || null,
     boat.type || null,
     boat.shortDescription || null,
-    boat.sourceListingUrl || null
+    boat.sourceListingUrl || null,
+    Number(boat.sortOrder ?? boat.sort_order ?? 0)
   ).run();
 
   if (boat.startingPrice !== undefined || boat.priceUnit) {
@@ -177,6 +191,7 @@ function outBoat(row) {
     lifecycleStatus: row.lifecycle_status,
     bookingEnabled: Boolean(row.booking_enabled),
     featured: Boolean(row.featured),
+    sortOrder: Number(row.sort_order || 0),
     homePort: row.home_port,
     lengthFt: row.length_ft,
     capacity: row.capacity,

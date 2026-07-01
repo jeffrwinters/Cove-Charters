@@ -36,6 +36,7 @@ Important fields:
 - `lifecycle_status`
 - `booking_enabled`
 - `featured`
+- `sort_order`
 - `home_port`
 - `length_ft`
 - `capacity`

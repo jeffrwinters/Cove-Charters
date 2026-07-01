@@ -30,6 +30,7 @@ Current core endpoints:
 - `PUT /api/v1/settings`
 - `GET /api/v1/boats`
 - `POST /api/v1/boats`
+- `PUT /api/v1/boats/order`
 - `GET /api/v1/boats/{id-or-slug}`
 - `PUT /api/v1/boats/{id}`
 - `DELETE /api/v1/boats/{id}`
