@@ -621,7 +621,7 @@ async function bookings(request, env, cors, ctx) {
       Number(price?.fuel_deposit || 0),
       Number(price?.tax_rate || 0.08225),
       Number(await setting(env, 'mileage_rate', 14)),
-      body.officeNotes || body.notes || null
+      body.officeNotes ?? body.office_notes ?? null
     ).run();
 
     const row = await env.DB.prepare(bookingSelectSql('WHERE bk.id = ?')).bind(bookingId).first();
