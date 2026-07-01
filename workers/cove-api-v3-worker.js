@@ -742,7 +742,7 @@ async function bookingSettlement(request, env, cors, bookingId) {
     const calculation = await calculateSettlement(env, bookingRow, currentTrip || {}, { ...currentSettlement, ...body });
     const tripId = currentTrip?.id || body.tripId || `trip_${crypto.randomUUID()}`;
     const settlementId = currentSettlement?.id || body.settlementId || `settlement_${crypto.randomUUID()}`;
-    const closeTrip = body.closeTrip || body.officeStatus === 'final' || body.office_status === 'final';
+    const closeTrip = Boolean(body.closeTrip);
 
     await env.DB.prepare(`
       INSERT OR REPLACE INTO trips (

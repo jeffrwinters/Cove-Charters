@@ -150,8 +150,8 @@ Completed so far:
 - Shared admin detail header assets now provide sticky breadcrumb plus compact Save affordances.
 - Universal admin side-panel assets are loaded and available for future low-risk detail views; full editors were not replaced during the MVP merge.
 - Boats and Captains now use the shared sticky breadcrumb/save header.
-- Admin has a Customer List tab in desktop and mobile navigation.
-- Customer List is derived from booking records for MVP and preserves list-to-detail drill-in UX.
+- Admin has a Customers tab in desktop and mobile navigation.
+- Customers are derived from booking records for MVP and preserve list-to-detail drill-in UX.
 - Customer statuses supported in the UI are `new`, `repeat`, `vip`, and `banned`.
 - Banned customers show a soft red warning banner in the customer detail view.
 - Customer status/notes/profile overrides are stored in browser localStorage under `cove_customer_overrides` until a durable customer table/API is added.
@@ -169,7 +169,7 @@ Completed so far:
 
 ## Current Roadmap
 
-1. Add a durable customers data model/API so Customer List edits are shared across admin browsers.
+1. Add a durable customers data model/API so Customers edits are shared across admin browsers.
 2. Add a cleaner captain-facing trip view / future captain app foundation.
 3. Turn the agreement packet workflow into real document/e-sign storage.
 4. Turn closeout/settlement notes into structured accounting records.
