@@ -133,10 +133,33 @@ Completed so far:
 - Admin calendar renders availability blocks alongside bookings.
 - Booking cards show availability conflict warnings when their boat or captain overlaps an availability block.
 
+### Admin UX Refactor Slice
+
+Completed so far:
+
+- Admin Command Center was split from a monolithic `admin.html` into separate HTML, CSS, and JS assets.
+- Shared admin detail header assets now provide sticky breadcrumb plus compact Save affordances.
+- Universal admin side-panel assets are loaded and available for future low-risk detail views; full editors were not replaced during the MVP merge.
+- Boats and Captains now use the shared sticky breadcrumb/save header.
+- Admin has a Customer List tab in desktop and mobile navigation.
+- Customer List is derived from booking records for MVP and preserves list-to-detail drill-in UX.
+- Customer statuses supported in the UI are `new`, `repeat`, `vip`, and `banned`.
+- Banned customers show a soft red warning banner in the customer detail view.
+- Customer status/notes/profile overrides are stored in browser localStorage under `cove_customer_overrides` until a durable customer table/API is added.
+
+### Captain Images Slice
+
+Completed so far:
+
+- Captain records now support canonical `photoUrl` backed by D1 column `captains.photo_url`.
+- Admin captain profiles can upload, preview, paste, replace, and remove a captain headshot/profile image URL.
+- Public captain cards read `photoUrl` and fall back to initials/placeholders when missing.
+- Migration file `migrations/0006_add_captain_photo_url.sql` adds the `photo_url` column.
+
 ## Current Roadmap
 
-1. Add a cleaner captain-facing trip view / future captain app foundation.
-2. Configure Resend sender domain/API key for live booking alerts and customer confirmations.
+1. Add a durable customers data model/API so Customer List edits are shared across admin browsers.
+2. Add a cleaner captain-facing trip view / future captain app foundation.
 3. Turn the agreement packet workflow into real document/e-sign storage.
 4. Turn closeout/settlement notes into structured accounting records.
 5. Back office settlement workflow.

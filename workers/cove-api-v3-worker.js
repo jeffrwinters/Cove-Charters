@@ -42,7 +42,7 @@ async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
       const resendConfigured = Boolean(env.RESEND_API_KEY && env.BOOKING_NOTIFY_FROM);
-  return json({ ok: true, service: 'cove-api', version: '0.3.23', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
+  return json({ ok: true, service: 'cove-api', version: '0.3.24', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
 }
 
 async function settings(request, env, cors) {
@@ -309,8 +309,8 @@ async function boatCaptains(request, env, cors, boatId) {
 async function upsertCaptain(env, captain) {
   await env.DB.prepare(`
     INSERT OR REPLACE INTO captains (
-      id, name, status, credential, email, phone, bio, home_port, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      id, name, status, credential, email, phone, bio, home_port, photo_url, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
   `).bind(
     captain.id,
     captain.name || 'New Captain',
@@ -319,7 +319,8 @@ async function upsertCaptain(env, captain) {
     captain.email || null,
     captain.phone || null,
     captain.bio || null,
-    captain.homePort || captain.home_port || null
+    captain.homePort || captain.home_port || null,
+    captain.photoUrl ?? captain.photo_url ?? null
   ).run();
 }
 
@@ -333,6 +334,7 @@ function outCaptain(row) {
     phone: row.phone,
     bio: row.bio,
     homePort: row.home_port,
+    photoUrl: row.photo_url,
     approvedBoatCount: Number(row.approved_boat_count || 0),
     approvalStatus: row.approval_status,
     approvalNotes: row.approval_notes,

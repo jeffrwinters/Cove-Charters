@@ -44,7 +44,7 @@ class AdminSidePanel {
       <header class="admin-side-panel__header">
         <div class="admin-side-panel__topline">
           <div class="admin-side-panel__eyebrow" data-side-panel-eyebrow>Details</div>
-          <button class="admin-side-panel__close" type="button" aria-label="Close panel" data-side-panel-close>×</button>
+          <button class="admin-side-panel__close" type="button" aria-label="Close panel" data-side-panel-close>x</button>
         </div>
         <h2 class="admin-side-panel__title" data-side-panel-title>Record</h2>
         <p class="admin-side-panel__subtitle" data-side-panel-subtitle></p>
@@ -100,11 +100,11 @@ class AdminSidePanel {
   }
 
   static field(label, value) {
-    return `<div class="admin-side-panel-field"><label>${AdminSidePanel.escape(label)}</label><span>${AdminSidePanel.escape(value || '—')}</span></div>`;
+    return `<div class="admin-side-panel-field"><label>${AdminSidePanel.escape(label)}</label><span>${AdminSidePanel.escape(value || '-')}</span></div>`;
   }
 
   static pill(value) {
-    return `<span class="admin-side-panel-pill">${AdminSidePanel.escape(value || '—')}</span>`;
+    return `<span class="admin-side-panel-pill">${AdminSidePanel.escape(value || '-')}</span>`;
   }
 
   static escape(value) {
