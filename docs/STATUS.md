@@ -53,7 +53,6 @@ Completed so far:
 - Public `boat.html` loads media for the selected boat.
 - Public boat detail renders a cover-driven hero, gallery carousel, thumbnail strip, and videos when media exists.
 - Public boat detail gracefully shows an empty media state when no media has been uploaded.
-- Public boat detail shows a mobile-only sticky `Book This Boat` CTA after the hero CTA scrolls out of view, and hides it while the request form is in view.
 - Public homepage fleet cards use each boat's uploaded cover photo when available.
 - Public homepage and boat detail pages include baseline SEO metadata, canonical URLs, Open Graph tags, and lightweight structured data.
 - Public boat detail page has customer-facing language for overview, media, amenities, and available captains; internal/admin MVP wording is hidden from guests.
@@ -143,6 +142,8 @@ Completed so far:
 5. Back office settlement workflow.
 6. Payments.
 7. SEO and public polish.
+
+Parked idea: mobile sticky `Book This Boat` CTA on public boat detail pages. A version that appeared after the hero CTA and hid over the request form was shelved because it did not match the desired flow; revisit if the boat detail page layout changes.
 
 ## Development Rules
 
