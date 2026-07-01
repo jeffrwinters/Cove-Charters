@@ -49,8 +49,8 @@ export default {
 async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
-      const resendConfigured = Boolean(env.RESEND_API_KEY && env.BOOKING_NOTIFY_FROM);
-  return json({ ok: true, service: 'cove-api', version: '0.3.34', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
+  const resendConfigured = Boolean(env.RESEND_API_KEY && env.BOOKING_NOTIFY_FROM);
+  return json({ ok: true, service: 'cove-api', version: '0.3.35', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
 }
 
 async function settings(request, env, cors) {
@@ -1703,9 +1703,11 @@ async function sendSignedAgreementNotice(env, booking) {
     booking.captainEmail
   ].filter(Boolean);
   if (!recipients.length) return null;
-  const subject = `Cove signed documents: ${booking.boatName || booking.boatId} on ${booking.charterDate || 'date TBD'}`;
+  const subject = `Cove confirmed booking ready: ${booking.boatName || booking.boatId} on ${booking.charterDate || 'date TBD'}`;
   const lines = [
-    `Cove signed document notice`,
+    `Cove confirmed booking notice`,
+    ``,
+    `This booking is confirmed and the customer has completed the required charter documents.`,
     ``,
     `Booking: ${booking.id}`,
     `Customer: ${booking.customerName || 'Guest'}`,
@@ -1719,8 +1721,9 @@ async function sendSignedAgreementNotice(env, booking) {
     booking.signingUrl ? `Customer signing packet: ${booking.signingUrl}` : ''
   ].filter(line => line !== '');
   const html = `
-    <h2>Cove documents signed</h2>
-    <p>${escapeHtml(booking.signerName || booking.customerName || 'The customer')} completed the charter document packet.</p>
+    <h2>Confirmed booking ready for captain</h2>
+    <p>This Cove charter is confirmed, and ${escapeHtml(booking.signerName || booking.customerName || 'the customer')} has completed the required charter documents.</p>
+    <p>Please review the booking details and signed record before the trip.</p>
     <p><strong>Booking:</strong> ${escapeHtml(booking.id)}<br><strong>Boat:</strong> ${escapeHtml(booking.boatName || booking.boatId)}<br><strong>Captain:</strong> ${escapeHtml(booking.captainName || 'Captain TBD')}<br><strong>Date:</strong> ${escapeHtml(booking.charterDate || 'TBD')} ${escapeHtml(booking.startTime || '')}</p>
     <p><a href="${escapeHtml(booking.signedRecordUrl)}">Open the signed record in Cove Admin</a></p>
   `;
