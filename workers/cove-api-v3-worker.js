@@ -47,7 +47,7 @@ async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
       const resendConfigured = Boolean(env.RESEND_API_KEY && env.BOOKING_NOTIFY_FROM);
-  return json({ ok: true, service: 'cove-api', version: '0.3.30', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
+  return json({ ok: true, service: 'cove-api', version: '0.3.31', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
 }
 
 async function settings(request, env, cors) {
@@ -73,7 +73,6 @@ async function boats(request, env, cors) {
       SELECT b.*,
         (SELECT base_fee FROM boat_pricing WHERE boat_id = b.id AND active = 1 ORDER BY duration_hours LIMIT 1) AS starting_price,
         (SELECT plan_name FROM boat_pricing WHERE boat_id = b.id AND active = 1 ORDER BY duration_hours LIMIT 1) AS price_unit,
-        (SELECT GROUP_CONCAT(captain_id) FROM boat_captains WHERE boat_id = b.id AND status = 'approved') AS approved_captain_ids,
         o.name AS owner_name,
         o.email AS owner_email,
         o.phone AS owner_phone,
@@ -87,7 +86,8 @@ async function boats(request, env, cors) {
       LEFT JOIN owners o ON o.id = b.owner_id
       ORDER BY sort_order ASC, featured DESC, name ASC
     `).all();
-    return json((rows.results || []).map(outBoat), 200, cors);
+    const boatsWithCaptains = await withApprovedCaptainIds(env, rows.results || []);
+    return json(boatsWithCaptains.map(outBoat), 200, cors);
   }
   if (request.method === 'POST') {
     const auth = requireAdmin(request, env);
@@ -119,7 +119,6 @@ async function boatById(request, env, cors, id) {
       SELECT b.*,
         (SELECT base_fee FROM boat_pricing WHERE boat_id = b.id AND active = 1 ORDER BY duration_hours LIMIT 1) AS starting_price,
         (SELECT plan_name FROM boat_pricing WHERE boat_id = b.id AND active = 1 ORDER BY duration_hours LIMIT 1) AS price_unit,
-        (SELECT GROUP_CONCAT(captain_id) FROM boat_captains WHERE boat_id = b.id AND status = 'approved') AS approved_captain_ids,
         o.name AS owner_name,
         o.email AS owner_email,
         o.phone AS owner_phone,
@@ -133,7 +132,9 @@ async function boatById(request, env, cors, id) {
       LEFT JOIN owners o ON o.id = b.owner_id
       WHERE b.id = ? OR b.slug = ?
     `).bind(id, id).first();
-    return row ? json(outBoat(row), 200, cors) : json({ error: 'Boat not found' }, 404, cors);
+    if (!row) return json({ error: 'Boat not found' }, 404, cors);
+    const [boatWithCaptains] = await withApprovedCaptainIds(env, [row]);
+    return json(outBoat(boatWithCaptains), 200, cors);
   }
   if (request.method === 'PUT') {
     const auth = requireAdmin(request, env);
@@ -254,6 +255,24 @@ function outBoat(row) {
     approvedCaptainIds: row.approved_captain_ids ? String(row.approved_captain_ids).split(',').filter(Boolean) : []
   };
   return { ...boat, ...marketingFields(boat) };
+}
+
+async function withApprovedCaptainIds(env, boatRows) {
+  if (!boatRows.length) return boatRows;
+  const boatIds = boatRows.map(row => row.id).filter(Boolean);
+  if (!boatIds.length) return boatRows;
+  const placeholders = boatIds.map(() => '?').join(',');
+  const rows = await env.DB.prepare(`
+    SELECT boat_id, captain_id
+    FROM boat_captains
+    WHERE status = 'approved' AND boat_id IN (${placeholders})
+    ORDER BY boat_id ASC, sort_order ASC, created_at ASC, captain_id ASC
+  `).bind(...boatIds).all();
+  const byBoat = new Map(boatIds.map(id => [id, []]));
+  for (const row of rows.results || []) {
+    if (byBoat.has(row.boat_id)) byBoat.get(row.boat_id).push(row.captain_id);
+  }
+  return boatRows.map(row => ({ ...row, approved_captain_ids: (byBoat.get(row.id) || []).join(',') }));
 }
 
 async function owners(request, env, cors) {
@@ -409,11 +428,11 @@ async function boatCaptains(request, env, cors, boatId) {
   requireDb(env);
   if (request.method === 'GET') {
     const rows = await env.DB.prepare(`
-      SELECT c.*, bc.status AS approval_status, bc.notes AS approval_notes
+      SELECT c.*, bc.status AS approval_status, bc.notes AS approval_notes, bc.sort_order AS approval_sort_order
       FROM captains c
       INNER JOIN boat_captains bc ON bc.captain_id = c.id
       WHERE bc.boat_id = ? AND bc.status = 'approved'
-      ORDER BY c.name ASC
+      ORDER BY bc.sort_order ASC, c.name ASC
     `).bind(boatId).all();
     return json((rows.results || []).map(outCaptain), 200, cors);
   }
@@ -423,9 +442,9 @@ async function boatCaptains(request, env, cors, boatId) {
     const body = await request.json();
     const captainIds = unique(Array.isArray(body.captainIds) ? body.captainIds.map(String) : []);
     await env.DB.prepare('DELETE FROM boat_captains WHERE boat_id = ?').bind(boatId).run();
-    for (const captainId of captainIds) {
-      await env.DB.prepare('INSERT OR REPLACE INTO boat_captains (boat_id, captain_id, status, notes) VALUES (?, ?, ?, ?)')
-        .bind(boatId, captainId, 'approved', null)
+    for (const [index, captainId] of captainIds.entries()) {
+      await env.DB.prepare('INSERT OR REPLACE INTO boat_captains (boat_id, captain_id, status, notes, sort_order) VALUES (?, ?, ?, ?, ?)')
+        .bind(boatId, captainId, 'approved', null, index)
         .run();
     }
     return json({ ok: true, boatId, captainIds }, 200, cors);
@@ -471,6 +490,7 @@ function outCaptain(row) {
     approvedBoatCount: Number(row.approved_boat_count || 0),
     approvalStatus: row.approval_status,
     approvalNotes: row.approval_notes,
+    approvalSortOrder: num(row.approval_sort_order, 0),
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };

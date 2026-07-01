@@ -18,7 +18,7 @@ The active Worker file is:
 workers/cove-api-v3-worker.js
 ```
 
-The current API version is `0.3.27` after adding admin-controlled crop settings for captain photos and boat cover media.
+The current API version is `0.3.31` after adding per-boat captain priority ordering for customer selection.
 
 ## Working End To End
 
@@ -77,6 +77,8 @@ Completed so far:
 - Boat API responses now include `approvedCaptainIds` from D1.
 - Admin Command Center has a Captains tab for CRUD.
 - Admin boat detail has an Approved captains panel for assigning captains to boats.
+- Admin boat detail can drag/drop approved captains to control the per-boat customer dropdown order.
+- Public boat detail captain selection follows the approved captain priority order for that boat.
 - Admin captain profiles have an Approved boats panel for managing the same boat/captain approval relationship from the captain side.
 
 ### Booking Requests Slice

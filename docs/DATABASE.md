@@ -74,6 +74,8 @@ Image fields:
 
 Join table for approved boat/captain relationships.
 
+- `sort_order` controls the per-boat priority order shown in the customer captain selector.
+
 ### customers
 
 Stores customer records.
