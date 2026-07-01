@@ -26,6 +26,7 @@ export default {
       if (path.match(/^\/api\/v1\/bookings\/[^/]+\/send-confirmation$/)) return await sendBookingConfirmation(request, env, cors, path.split('/')[4]);
       if (path.match(/^\/api\/v1\/bookings\/[^/]+\/send-captain-packet$/)) return await sendCaptainPacket(request, env, cors, path.split('/')[4]);
       if (path.startsWith('/api/v1/bookings/')) return await bookingById(request, env, cors, path.split('/').pop());
+      if (path.match(/^\/api\/v1\/signing\/[^/]+$/)) return await signingPacket(request, env, cors, path.split('/').pop());
       if (path === '/api/v1/settings') return await settings(request, env, cors);
       if (path === '/api/v1/media') return await media(request, env, cors);
       if (path.startsWith('/api/v1/media/')) return await mediaById(request, env, cors, path.split('/').pop());
@@ -41,7 +42,7 @@ async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
   const resendConfigured = Boolean(env.RESEND_API_KEY && env.BOOKING_NOTIFY_FROM);
-  return json({ ok: true, service: 'cove-api', version: '0.3.20', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
+  return json({ ok: true, service: 'cove-api', version: '0.3.21', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
 }
 
 async function settings(request, env, cors) {
@@ -583,6 +584,73 @@ async function bookingDocuments(request, env, cors, bookingId) {
   return json({ error: 'GET or POST required' }, 405, cors);
 }
 
+async function signingPacket(request, env, cors, token) {
+  requireDb(env);
+  const row = await env.DB.prepare(bookingSelectSql('WHERE bk.signing_token = ?')).bind(token).first();
+  if (!row) return json({ error: 'Signing packet not found' }, 404, cors);
+  const booking = (await attachBookingDocuments(env, [outBooking(row)]))[0];
+
+  if (request.method === 'GET') {
+    return json({
+      booking: publicSigningBooking(booking),
+      sections: agreementSections(),
+      completed: booking.agreementStatus === 'signed' || Boolean(booking.signingCompletedAt)
+    }, 200, cors);
+  }
+
+  if (request.method === 'POST') {
+    const body = await request.json();
+    if (!body.signerName) return json({ error: 'Signer name is required' }, 400, cors);
+    if (!body.signatureText) return json({ error: 'Signature is required' }, 400, cors);
+    const accepted = Array.isArray(body.accepted) ? body.accepted : [];
+    const requiredIds = agreementSections().map(section => section.id);
+    const missing = requiredIds.filter(id => !accepted.some(item => item.id === id && item.accepted));
+    if (missing.length) return json({ error: `Missing acceptance for: ${missing.join(', ')}` }, 400, cors);
+
+    const signatureId = `sig_${crypto.randomUUID()}`;
+    await env.DB.prepare(`
+      INSERT INTO booking_signatures (id, booking_id, signer_name, signer_email, signer_ip, user_agent, accepted_json, signature_text)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      signatureId,
+      booking.id,
+      body.signerName,
+      body.signerEmail || booking.email || null,
+      body.signerIp || null,
+      body.userAgent || null,
+      JSON.stringify(accepted),
+      body.signatureText
+    ).run();
+
+    await env.DB.prepare(`
+      UPDATE bookings
+      SET agreement_status = 'signed', agreement_signed_at = COALESCE(agreement_signed_at, CURRENT_TIMESTAMP),
+        signing_completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).bind(booking.id).run();
+
+    const summaryUrl = `${env.ADMIN_URL || 'https://jeffrwinters.github.io/Cove-Charters/admin.html'}#booking-${booking.id}`;
+    await env.DB.prepare(`
+      INSERT INTO booking_documents (id, booking_id, document_type, title, url, filename, content_type, status, audience, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    `).bind(
+      `doc_${crypto.randomUUID()}`,
+      booking.id,
+      'electronic_signature_record',
+      'Electronic signing record',
+      summaryUrl,
+      `electronic-signature-${booking.id}.json`,
+      'application/json',
+      'signed',
+      'office,captain'
+    ).run();
+
+    return json({ ok: true, signatureId }, 201, cors);
+  }
+
+  return json({ error: 'GET or POST required' }, 405, cors);
+}
+
 async function sendBookingConfirmation(request, env, cors, id) {
   requireDb(env);
   const auth = requireAdmin(request, env);
@@ -623,15 +691,16 @@ async function sendAgreementPacket(request, env, cors, id) {
   }
 
   const body = await request.json().catch(() => ({}));
-  const signingUrl = body.signingUrl || body.signing_url || booking.signingUrl || env.AGREEMENT_SIGNING_URL || '';
+  const signingToken = booking.signingToken || body.signingToken || crypto.randomUUID();
+  const signingUrl = body.signingUrl || body.signing_url || booking.signingUrl || `${publicSiteUrl(env)}/sign.html?token=${encodeURIComponent(signingToken)}`;
   const result = await sendCustomerAgreementPacket(env, { ...booking, signingUrl });
   const note = `[${new Date().toLocaleString('en-US', { timeZone: 'America/Chicago' })}] Agreement packet sent to ${booking.email}${signingUrl ? ` (${signingUrl})` : ''}`;
   await env.DB.prepare(`
     UPDATE bookings
-    SET agreement_status = ?, signing_url = COALESCE(?, signing_url), agreement_sent_at = CURRENT_TIMESTAMP,
+    SET agreement_status = ?, signing_token = COALESCE(signing_token, ?), signing_url = COALESCE(?, signing_url), agreement_sent_at = CURRENT_TIMESTAMP,
       office_notes = ?, updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
-  `).bind('sent', signingUrl || null, [booking.officeNotes, note].filter(Boolean).join('\n'), id).run();
+  `).bind('sent', signingToken, signingUrl || null, [booking.officeNotes, note].filter(Boolean).join('\n'), id).run();
 
   return json({ ok: true, sent: true, result }, 200, cors);
 }
@@ -708,7 +777,10 @@ function outBooking(row) {
     agreementSentAt: row.agreement_sent_at,
     agreementSignedAt: row.agreement_signed_at,
     signingUrl: row.signing_url,
+    signingToken: row.signing_token,
+    signingCompletedAt: row.signing_completed_at,
     documents: [],
+    signatures: [],
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -719,11 +791,16 @@ async function attachBookingDocuments(env, bookings) {
   const ids = bookings.map(b => b.id);
   const placeholders = ids.map(() => '?').join(',');
   const rows = await env.DB.prepare(`SELECT * FROM booking_documents WHERE booking_id IN (${placeholders}) ORDER BY created_at DESC`).bind(...ids).all();
+  const sigRows = await env.DB.prepare(`SELECT * FROM booking_signatures WHERE booking_id IN (${placeholders}) ORDER BY signed_at DESC`).bind(...ids).all();
   const byBooking = new Map(ids.map(id => [id, []]));
+  const signaturesByBooking = new Map(ids.map(id => [id, []]));
   for (const row of rows.results || []) {
     byBooking.get(row.booking_id)?.push(outBookingDocument(row));
   }
-  return bookings.map(booking => ({ ...booking, documents: byBooking.get(booking.id) || [] }));
+  for (const row of sigRows.results || []) {
+    signaturesByBooking.get(row.booking_id)?.push(outBookingSignature(row));
+  }
+  return bookings.map(booking => ({ ...booking, documents: byBooking.get(booking.id) || [], signatures: signaturesByBooking.get(booking.id) || [] }));
 }
 
 function outBookingDocument(row) {
@@ -740,6 +817,71 @@ function outBookingDocument(row) {
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
+}
+
+function outBookingSignature(row) {
+  return {
+    id: row.id,
+    bookingId: row.booking_id,
+    signerName: row.signer_name,
+    signerEmail: row.signer_email,
+    accepted: safeJson(row.accepted_json, []),
+    signatureText: row.signature_text,
+    signedAt: row.signed_at
+  };
+}
+
+function publicSigningBooking(booking) {
+  return {
+    id: booking.id,
+    customerName: booking.customerName,
+    email: booking.email,
+    boatName: booking.boatName,
+    captainName: booking.captainName,
+    charterDate: booking.charterDate,
+    startTime: booking.startTime,
+    durationHours: booking.durationHours,
+    agreementStatus: booking.agreementStatus
+  };
+}
+
+function agreementSections() {
+  return [
+    {
+      id: 'captain_service_agreement',
+      title: 'Captain Service Agreement',
+      summary: 'Confirms the customer selected the captain and understands captain services are separate from the vessel charter.',
+      body: 'Final legal text pending. Replace this section with the approved Captain Service Agreement before production signing.'
+    },
+    {
+      id: 'bareboat_charter_agreement',
+      title: 'Bareboat Charter Agreement',
+      summary: 'Defines the bareboat charter terms for the vessel, charter period, customer responsibilities, and required captain selection.',
+      body: 'Final legal text pending. Replace this section with the approved Bareboat Charter Agreement before production signing.'
+    },
+    {
+      id: 'waiver_release_indemnification',
+      title: 'Waiver, Release, and Indemnification',
+      summary: 'Captures customer acknowledgement of boating risks, releases, and indemnification obligations.',
+      body: 'Final legal text pending. Replace this section with the approved Waiver, Release, and Indemnification language before production signing.'
+    },
+    {
+      id: 'rules_guidelines_fines',
+      title: 'Rules, Guidelines, and Fines',
+      summary: 'Lists operational rules, prohibited conduct, vessel care expectations, and fines or charges.',
+      body: 'Final legal text pending. Replace this section with the approved Rules, Guidelines, and Fines before production signing.'
+    },
+    {
+      id: 'cancellation_policy',
+      title: 'Cancellation Policy',
+      summary: 'Explains cancellation, weather, timing, refund, and rescheduling terms.',
+      body: 'Final legal text pending. Replace this section with the approved Cancellation Policy before production signing.'
+    }
+  ];
+}
+
+function safeJson(value, fallback) {
+  try { return JSON.parse(value); } catch { return fallback; }
 }
 
 function splitName(fullName, firstName, lastName) {
@@ -952,6 +1094,10 @@ function captainPacketAttachments(env, booking) {
 function safeAttachmentName(title, fallback = 'document') {
   const base = String(title || fallback || 'document').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'document';
   return base.endsWith('.pdf') ? base : `${base}.pdf`;
+}
+
+function publicSiteUrl(env) {
+  return (env.PUBLIC_SITE_URL || 'https://jeffrwinters.github.io/Cove-Charters').replace(/\/+$/, '');
 }
 
 function escapeHtml(value) {

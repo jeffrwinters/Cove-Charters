@@ -49,6 +49,8 @@ Current core endpoints:
 - `POST /api/v1/bookings/{id}/send-captain-packet`
 - `GET /api/v1/bookings/{id}/documents`
 - `POST /api/v1/bookings/{id}/documents`
+- `GET /api/v1/signing/{token}`
+- `POST /api/v1/signing/{token}`
 
 Public reads can remain public where appropriate. Admin writes require `Authorization: Bearer <ADMIN_TOKEN>`.
 

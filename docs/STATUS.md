@@ -100,6 +100,8 @@ Completed so far:
 - Admin confirmed/completed booking cards include Send Confirmation. It calls `POST /api/v1/bookings/{id}/send-confirmation`; if Resend email sending is not configured, the admin falls back to copying the confirmation text.
 - After back-office confirmation, Admin can send a guided agreement packet with `POST /api/v1/bookings/{id}/send-agreement-packet`.
 - Booking records now track `agreement_status`, sent/signed timestamps, and an optional `signing_url`.
+- Cove now has an internal public signing page at `sign.html?token=...`; agreement packet emails generate this link when a custom signing URL is not provided.
+- Public signing submissions are stored in `booking_signatures` and mark the booking agreement as signed.
 - Signed charter documents can be attached to booking records through `POST /api/v1/bookings/{id}/documents`.
 - Booking emails use Resend REST API when `RESEND_API_KEY` and `BOOKING_NOTIFY_FROM` are configured.
 - Admin confirmed/completed bookings with an assigned captain include Copy Captain Packet and Send Captain Packet. The send action calls `POST /api/v1/bookings/{id}/send-captain-packet`, requires the assigned captain to have an email address, and attaches signed booking documents / configured bareboat template URLs when available.

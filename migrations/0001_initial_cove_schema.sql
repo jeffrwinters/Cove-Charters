@@ -120,6 +120,8 @@ CREATE TABLE IF NOT EXISTS bookings (
   agreement_sent_at TEXT,
   agreement_signed_at TEXT,
   signing_url TEXT,
+  signing_token TEXT,
+  signing_completed_at TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (customer_id) REFERENCES customers(id),
@@ -140,6 +142,20 @@ CREATE TABLE IF NOT EXISTS booking_documents (
   audience TEXT NOT NULL DEFAULT 'office',
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (booking_id) REFERENCES bookings(id)
+);
+
+CREATE TABLE IF NOT EXISTS booking_signatures (
+  id TEXT PRIMARY KEY,
+  booking_id TEXT NOT NULL,
+  signer_name TEXT NOT NULL,
+  signer_email TEXT,
+  signer_ip TEXT,
+  user_agent TEXT,
+  accepted_json TEXT NOT NULL,
+  signature_text TEXT NOT NULL,
+  signed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (booking_id) REFERENCES bookings(id)
 );
 
@@ -262,6 +278,8 @@ CREATE INDEX IF NOT EXISTS idx_boat_pricing_boat ON boat_pricing(boat_id);
 CREATE INDEX IF NOT EXISTS idx_bookings_date ON bookings(charter_date);
 CREATE INDEX IF NOT EXISTS idx_bookings_boat ON bookings(boat_id);
 CREATE INDEX IF NOT EXISTS idx_booking_documents_booking ON booking_documents(booking_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_bookings_signing_token ON bookings(signing_token);
+CREATE INDEX IF NOT EXISTS idx_booking_signatures_booking ON booking_signatures(booking_id);
 CREATE INDEX IF NOT EXISTS idx_trips_booking ON trips(booking_id);
 CREATE INDEX IF NOT EXISTS idx_settlements_booking ON settlements(booking_id);
 CREATE INDEX IF NOT EXISTS idx_media_entity ON media(entity_type, entity_id);

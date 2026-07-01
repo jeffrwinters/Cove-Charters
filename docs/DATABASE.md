@@ -83,6 +83,8 @@ Agreement workflow fields:
 - `agreement_sent_at`
 - `agreement_signed_at`
 - `signing_url`
+- `signing_token`
+- `signing_completed_at`
 
 ### booking_documents
 
@@ -98,6 +100,19 @@ Important fields:
 - `content_type`
 - `status`
 - `audience`
+
+### booking_signatures
+
+Stores electronic signature records submitted through Cove's internal signing page.
+
+Important fields:
+
+- `booking_id`
+- `signer_name`
+- `signer_email`
+- `accepted_json`
+- `signature_text`
+- `signed_at`
 
 ### trips
 
