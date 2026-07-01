@@ -93,6 +93,8 @@ Completed so far:
 - Public and admin time inputs are constrained and snapped to 30-minute increments.
 - Public booking requests append the availability guidance shown to the customer into customer notes for back-office context.
 - Public booking request form now sets clearer expectations: no payment due today, Cove confirms boat/captain/agreement/payment details, and customers should watch email after submission.
+- Admin Command Center has a booking lifecycle Kanban board for requested, reviewing, confirmed, completed, and closed bookings.
+- API base URL, admin token controls, auth status, and raw API/state JSON live under API Debug instead of Command Center.
 - Admin Command Center has a Bookings inbox with status updates.
 - Admin booking cards now work as a small operations workbench: status, assigned captain, date, start time, duration, and office notes are editable in place.
 - Admin booking cards include copy-ready internal summaries plus confirmation and decline customer reply drafts.
@@ -121,6 +123,7 @@ Completed so far:
 - Admin now includes a basic Owners manager. Boats can be assigned to an owner from the Boat editor dropdown or from the Owner manager's owned-boats checklist.
 - Admin confirmed/completed bookings can send a final invoice to the customer. The action saves the current settlement first, then emails an itemized final invoice through Resend.
 - Admin Bookings has filters for status, boat, captain, date range, and text search.
+- Admin Bookings has a summary-list to detail drill-in workflow, with the full booking editor behind the selected record.
 - Admin Bookings includes a master month calendar for dated booking requests; calendar entries respect the same status, boat, captain, date, and search filters.
 - Booking statuses for admin operations are `requested`, `reviewing`, `confirmed`, `completed`, `declined`, and `cancelled`.
 - Booking requests attempt an email notification when the Cloudflare Email Sending binding and notification variables are configured.
