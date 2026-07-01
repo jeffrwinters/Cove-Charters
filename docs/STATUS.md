@@ -99,11 +99,14 @@ Completed so far:
 - Admin booking cards include quick actions for Confirm, Needs Follow-up, and Decline. These update status, stamp office notes, and copy customer-ready text where applicable.
 - Admin confirmed/completed booking cards include Send Confirmation. It calls `POST /api/v1/bookings/{id}/send-confirmation`; if Resend email sending is not configured, the admin falls back to copying the confirmation text.
 - After back-office confirmation, Admin can send a guided agreement packet with `POST /api/v1/bookings/{id}/send-agreement-packet`.
+- Sending an agreement packet now requires a boat, captain, date, start time, and duration. Admin saves the current booking edits before sending so date/time/captain changes are baked into the packet.
 - Booking records now track `agreement_status`, sent/signed timestamps, and an optional `signing_url`.
 - Cove now has an internal public signing page at `sign.html?token=...`; agreement packet emails generate this link when a custom signing URL is not provided.
 - The signing page treats boat, captain, date, start time, duration, and customer as display-only confirmed details. If those change, back office should update the booking and send a fresh signing packet.
 - Internal signing sections now use the legal copy lifted from the existing Cove Gravity Forms agreement page, with old booking-selection placeholders normalized to confirmed booking details.
+- Signing initials now carry forward after first entry, and section navigation validates the current step before moving.
 - Public signing submissions are stored in `booking_signatures` and mark the booking agreement as signed.
+- When a customer signs, Cove sends a signed-document notice to the back office and assigned captain when email is configured and the captain has an email address.
 - Signed charter documents can be attached to booking records through `POST /api/v1/bookings/{id}/documents`.
 - Booking emails use Resend REST API when `RESEND_API_KEY` and `BOOKING_NOTIFY_FROM` are configured.
 - Admin confirmed/completed bookings with an assigned captain include Copy Captain Packet and Send Captain Packet. The send action calls `POST /api/v1/bookings/{id}/send-captain-packet`, requires the assigned captain to have an email address, and attaches signed booking documents / configured bareboat template URLs when available.

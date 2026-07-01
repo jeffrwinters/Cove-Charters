@@ -42,7 +42,7 @@ async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
       const resendConfigured = Boolean(env.RESEND_API_KEY && env.BOOKING_NOTIFY_FROM);
-  return json({ ok: true, service: 'cove-api', version: '0.3.22', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
+  return json({ ok: true, service: 'cove-api', version: '0.3.23', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
 }
 
 async function settings(request, env, cors) {
@@ -645,6 +645,10 @@ async function signingPacket(request, env, cors, token) {
       'office,captain'
     ).run();
 
+    await sendSignedAgreementNotice(env, { ...booking, signatureId, signerName: body.signerName, signerEmail: body.signerEmail || booking.email || null, signedRecordUrl: summaryUrl }).catch(error => {
+      console.warn('Signed agreement notice failed', error?.message || error);
+    });
+
     return json({ ok: true, signatureId }, 201, cors);
   }
 
@@ -661,6 +665,13 @@ async function sendBookingConfirmation(request, env, cors, id) {
   if (!row) return json({ error: 'Booking not found' }, 404, cors);
   const booking = (await attachBookingDocuments(env, [outBooking(row)]))[0];
   if (!booking.email) return json({ error: 'Booking has no customer email address' }, 400, cors);
+  const missing = [];
+  if (!booking.boatId) missing.push('boat');
+  if (!booking.captainId) missing.push('captain');
+  if (!booking.charterDate) missing.push('date');
+  if (!booking.startTime) missing.push('start time');
+  if (!booking.durationHours) missing.push('hours');
+  if (missing.length) return json({ error: `Add ${missing.join(', ')} before sending the agreement packet` }, 400, cors);
   if (!env.RESEND_API_KEY || !env.BOOKING_NOTIFY_FROM) {
     return json({ ok: false, sent: false, configured: false, provider: 'resend', error: 'Customer email is not configured' }, 501, cors);
   }
@@ -1097,6 +1108,43 @@ async function sendCaptainTripPacket(env, booking) {
     text: lines.join('\n'),
     html,
     attachments: captainPacketAttachments(env, booking)
+  });
+}
+
+async function sendSignedAgreementNotice(env, booking) {
+  if (!env.RESEND_API_KEY || !env.BOOKING_NOTIFY_FROM) return null;
+  const recipients = [
+    ...(env.BOOKING_NOTIFY_TO || '').split(',').map(item => item.trim()).filter(Boolean),
+    booking.captainEmail
+  ].filter(Boolean);
+  if (!recipients.length) return null;
+  const subject = `Cove signed documents: ${booking.boatName || booking.boatId} on ${booking.charterDate || 'date TBD'}`;
+  const lines = [
+    `Cove signed document notice`,
+    ``,
+    `Booking: ${booking.id}`,
+    `Customer: ${booking.customerName || 'Guest'}`,
+    `Signer: ${booking.signerName || 'Not provided'}`,
+    `Boat: ${booking.boatName || booking.boatId}`,
+    `Captain: ${booking.captainName || 'Captain TBD'}`,
+    `Date/time: ${booking.charterDate || 'TBD'} ${booking.startTime || ''}`,
+    `Duration: ${booking.durationHours || 'TBD'} hours`,
+    ``,
+    `Signed record: ${booking.signedRecordUrl}`,
+    booking.signingUrl ? `Customer signing packet: ${booking.signingUrl}` : ''
+  ].filter(line => line !== '');
+  const html = `
+    <h2>Cove documents signed</h2>
+    <p>${escapeHtml(booking.signerName || booking.customerName || 'The customer')} completed the charter document packet.</p>
+    <p><strong>Booking:</strong> ${escapeHtml(booking.id)}<br><strong>Boat:</strong> ${escapeHtml(booking.boatName || booking.boatId)}<br><strong>Captain:</strong> ${escapeHtml(booking.captainName || 'Captain TBD')}<br><strong>Date:</strong> ${escapeHtml(booking.charterDate || 'TBD')} ${escapeHtml(booking.startTime || '')}</p>
+    <p><a href="${escapeHtml(booking.signedRecordUrl)}">Open the signed record in Cove Admin</a></p>
+  `;
+  return await sendResendEmail(env, {
+    to: unique(recipients),
+    reply_to: env.BOOKING_REPLY_TO || env.BOOKING_NOTIFY_FROM,
+    subject,
+    text: lines.join('\n'),
+    html
   });
 }
 
