@@ -63,6 +63,13 @@ Examples:
 
 Stores captain profile records.
 
+Image fields:
+
+- `photo_url`
+- `photo_focal_x`
+- `photo_focal_y`
+- `photo_zoom`
+
 ### boat_captains
 
 Join table for approved boat/captain relationships.
@@ -137,6 +144,9 @@ Important fields:
 - `alt`
 - `sort_order`
 - `is_cover`
+- `focal_x`
+- `focal_y`
+- `zoom`
 - `created_at`
 
 ### availability

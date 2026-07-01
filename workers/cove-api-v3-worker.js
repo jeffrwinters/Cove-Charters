@@ -43,7 +43,7 @@ async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
       const resendConfigured = Boolean(env.RESEND_API_KEY && env.BOOKING_NOTIFY_FROM);
-  return json({ ok: true, service: 'cove-api', version: '0.3.26', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
+  return json({ ok: true, service: 'cove-api', version: '0.3.27', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
 }
 
 async function settings(request, env, cors) {
@@ -72,7 +72,10 @@ async function boats(request, env, cors) {
         (SELECT GROUP_CONCAT(captain_id) FROM boat_captains WHERE boat_id = b.id AND status = 'approved') AS approved_captain_ids,
         (SELECT url FROM media WHERE entity_type = 'boat' AND entity_id = b.id AND media_type = 'photos' ORDER BY is_cover DESC, sort_order ASC, created_at ASC LIMIT 1) AS cover_photo_url,
         (SELECT title FROM media WHERE entity_type = 'boat' AND entity_id = b.id AND media_type = 'photos' ORDER BY is_cover DESC, sort_order ASC, created_at ASC LIMIT 1) AS cover_photo_title,
-        (SELECT alt FROM media WHERE entity_type = 'boat' AND entity_id = b.id AND media_type = 'photos' ORDER BY is_cover DESC, sort_order ASC, created_at ASC LIMIT 1) AS cover_photo_alt
+        (SELECT alt FROM media WHERE entity_type = 'boat' AND entity_id = b.id AND media_type = 'photos' ORDER BY is_cover DESC, sort_order ASC, created_at ASC LIMIT 1) AS cover_photo_alt,
+        (SELECT focal_x FROM media WHERE entity_type = 'boat' AND entity_id = b.id AND media_type = 'photos' ORDER BY is_cover DESC, sort_order ASC, created_at ASC LIMIT 1) AS cover_photo_focal_x,
+        (SELECT focal_y FROM media WHERE entity_type = 'boat' AND entity_id = b.id AND media_type = 'photos' ORDER BY is_cover DESC, sort_order ASC, created_at ASC LIMIT 1) AS cover_photo_focal_y,
+        (SELECT zoom FROM media WHERE entity_type = 'boat' AND entity_id = b.id AND media_type = 'photos' ORDER BY is_cover DESC, sort_order ASC, created_at ASC LIMIT 1) AS cover_photo_zoom
       FROM boats b
       ORDER BY sort_order ASC, featured DESC, name ASC
     `).all();
@@ -111,7 +114,10 @@ async function boatById(request, env, cors, id) {
         (SELECT GROUP_CONCAT(captain_id) FROM boat_captains WHERE boat_id = b.id AND status = 'approved') AS approved_captain_ids,
         (SELECT url FROM media WHERE entity_type = 'boat' AND entity_id = b.id AND media_type = 'photos' ORDER BY is_cover DESC, sort_order ASC, created_at ASC LIMIT 1) AS cover_photo_url,
         (SELECT title FROM media WHERE entity_type = 'boat' AND entity_id = b.id AND media_type = 'photos' ORDER BY is_cover DESC, sort_order ASC, created_at ASC LIMIT 1) AS cover_photo_title,
-        (SELECT alt FROM media WHERE entity_type = 'boat' AND entity_id = b.id AND media_type = 'photos' ORDER BY is_cover DESC, sort_order ASC, created_at ASC LIMIT 1) AS cover_photo_alt
+        (SELECT alt FROM media WHERE entity_type = 'boat' AND entity_id = b.id AND media_type = 'photos' ORDER BY is_cover DESC, sort_order ASC, created_at ASC LIMIT 1) AS cover_photo_alt,
+        (SELECT focal_x FROM media WHERE entity_type = 'boat' AND entity_id = b.id AND media_type = 'photos' ORDER BY is_cover DESC, sort_order ASC, created_at ASC LIMIT 1) AS cover_photo_focal_x,
+        (SELECT focal_y FROM media WHERE entity_type = 'boat' AND entity_id = b.id AND media_type = 'photos' ORDER BY is_cover DESC, sort_order ASC, created_at ASC LIMIT 1) AS cover_photo_focal_y,
+        (SELECT zoom FROM media WHERE entity_type = 'boat' AND entity_id = b.id AND media_type = 'photos' ORDER BY is_cover DESC, sort_order ASC, created_at ASC LIMIT 1) AS cover_photo_zoom
       FROM boats b
       WHERE b.id = ? OR b.slug = ?
     `).bind(id, id).first();
@@ -214,6 +220,9 @@ function outBoat(row) {
         url: row.cover_photo_url,
         title: row.cover_photo_title,
         alt: row.cover_photo_alt,
+        focalX: num(row.cover_photo_focal_x, 50),
+        focalY: num(row.cover_photo_focal_y, 50),
+        zoom: num(row.cover_photo_zoom, 1),
         isCover: true,
         sortOrder: 0
       }] : [],
@@ -222,7 +231,10 @@ function outBoat(row) {
     coverPhoto: row.cover_photo_url ? {
       url: row.cover_photo_url,
       title: row.cover_photo_title,
-      alt: row.cover_photo_alt
+      alt: row.cover_photo_alt,
+      focalX: num(row.cover_photo_focal_x, 50),
+      focalY: num(row.cover_photo_focal_y, 50),
+      zoom: num(row.cover_photo_zoom, 1)
     } : null,
     approvedCaptainIds: row.approved_captain_ids ? String(row.approved_captain_ids).split(',').filter(Boolean) : []
   };
@@ -310,8 +322,8 @@ async function boatCaptains(request, env, cors, boatId) {
 async function upsertCaptain(env, captain) {
   await env.DB.prepare(`
     INSERT OR REPLACE INTO captains (
-      id, name, status, credential, email, phone, bio, home_port, photo_url, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      id, name, status, credential, email, phone, bio, home_port, photo_url, photo_focal_x, photo_focal_y, photo_zoom, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
   `).bind(
     captain.id,
     captain.name || 'New Captain',
@@ -321,7 +333,10 @@ async function upsertCaptain(env, captain) {
     captain.phone || null,
     captain.bio || null,
     captain.homePort || captain.home_port || null,
-    captain.photoUrl ?? captain.photo_url ?? null
+    captain.photoUrl ?? captain.photo_url ?? null,
+    num(captain.photoFocalX ?? captain.photo_focal_x, 50),
+    num(captain.photoFocalY ?? captain.photo_focal_y, 30),
+    num(captain.photoZoom ?? captain.photo_zoom, 1)
   ).run();
 }
 
@@ -336,6 +351,9 @@ function outCaptain(row) {
     bio: row.bio,
     homePort: row.home_port,
     photoUrl: row.photo_url,
+    photoFocalX: num(row.photo_focal_x, 50),
+    photoFocalY: num(row.photo_focal_y, 30),
+    photoZoom: num(row.photo_zoom, 1),
     approvedBoatCount: Number(row.approved_boat_count || 0),
     approvalStatus: row.approval_status,
     approvalNotes: row.approval_notes,
@@ -1552,9 +1570,9 @@ async function uploadMedia(request, env, cors) {
 
   if (shouldCover) await clearCover(env, entityType, entityId);
   await env.DB.prepare(`
-    INSERT INTO media (id, entity_type, entity_id, media_type, url, title, alt, sort_order, is_cover)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).bind(mediaId, entityType, entityId, mediaType, publicUrl, title, alt, nextSort, shouldCover ? 1 : 0).run();
+    INSERT INTO media (id, entity_type, entity_id, media_type, url, title, alt, sort_order, is_cover, focal_x, focal_y, zoom)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(mediaId, entityType, entityId, mediaType, publicUrl, title, alt, nextSort, shouldCover ? 1 : 0, 50, 50, 1).run();
 
   const row = await env.DB.prepare('SELECT * FROM media WHERE id = ?').bind(mediaId).first();
   return json({ ok: true, path, url: publicUrl, media: outMedia(row) }, 200, cors);
@@ -1579,12 +1597,15 @@ async function mediaById(request, env, cors, id) {
       title: body.title ?? current.title,
       alt: body.alt ?? current.alt,
       sortOrder: body.sortOrder ?? body.sort_order ?? current.sort_order,
-      isCover: body.isCover ?? body.is_cover ?? Boolean(current.is_cover)
+      isCover: body.isCover ?? body.is_cover ?? Boolean(current.is_cover),
+      focalX: body.focalX ?? body.focal_x ?? current.focal_x,
+      focalY: body.focalY ?? body.focal_y ?? current.focal_y,
+      zoom: body.zoom ?? current.zoom
     };
 
     if (truthy(next.isCover)) await clearCover(env, current.entity_type, current.entity_id);
-    await env.DB.prepare('UPDATE media SET title = ?, alt = ?, sort_order = ?, is_cover = ? WHERE id = ?')
-      .bind(String(next.title || ''), String(next.alt || ''), Number(next.sortOrder || 0), truthy(next.isCover) ? 1 : 0, id)
+    await env.DB.prepare('UPDATE media SET title = ?, alt = ?, sort_order = ?, is_cover = ?, focal_x = ?, focal_y = ?, zoom = ? WHERE id = ?')
+      .bind(String(next.title || ''), String(next.alt || ''), Number(next.sortOrder || 0), truthy(next.isCover) ? 1 : 0, num(next.focalX, 50), num(next.focalY, 50), num(next.zoom, 1), id)
       .run();
     const updated = await env.DB.prepare('SELECT * FROM media WHERE id = ?').bind(id).first();
     return json({ ok: true, media: outMedia(updated) }, 200, cors);
@@ -1625,9 +1646,9 @@ async function backfillBoatMediaFromAssets(env, boatId, requestedMediaType) {
       const isCover = mediaType === 'photos' && index === 0 && await hasNoCover(env, 'boat', boat.id);
       if (isCover) await clearCover(env, 'boat', boat.id);
       await env.DB.prepare(`
-        INSERT INTO media (id, entity_type, entity_id, media_type, url, title, alt, sort_order, is_cover)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).bind(`media_${crypto.randomUUID()}`, 'boat', boat.id, mediaType, file.download_url, title, title, index, isCover ? 1 : 0).run();
+        INSERT INTO media (id, entity_type, entity_id, media_type, url, title, alt, sort_order, is_cover, focal_x, focal_y, zoom)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(`media_${crypto.randomUUID()}`, 'boat', boat.id, mediaType, file.download_url, title, title, index, isCover ? 1 : 0, 50, 50, 1).run();
     }
   }
 }
@@ -1651,6 +1672,9 @@ function outMedia(row) {
     alt: row.alt,
     sortOrder: row.sort_order,
     isCover: Boolean(row.is_cover),
+    focalX: num(row.focal_x, 50),
+    focalY: num(row.focal_y, 50),
+    zoom: num(row.zoom, 1),
     createdAt: row.created_at
   };
 }

@@ -18,7 +18,7 @@ The active Worker file is:
 workers/cove-api-v3-worker.js
 ```
 
-The current API version is `0.3.26` after aligning settlement math to the reviewed payout spreadsheet.
+The current API version is `0.3.27` after adding admin-controlled crop settings for captain photos and boat cover media.
 
 ## Working End To End
 
@@ -156,9 +156,11 @@ Completed so far:
 Completed so far:
 
 - Captain records now support canonical `photoUrl` backed by D1 column `captains.photo_url`.
-- Admin captain profiles can upload, preview, paste, replace, and remove a captain headshot/profile image URL.
-- Public captain cards read `photoUrl` and fall back to initials/placeholders when missing.
+- Admin captain profiles can upload, preview, paste, replace, remove, and crop a captain headshot/profile image.
+- Public captain cards read `photoUrl`, honor `photoFocalX`, `photoFocalY`, and `photoZoom`, and fall back to initials/placeholders when missing.
+- Boat cover media rows now support `focalX`, `focalY`, and `zoom`; admin can crop the selected cover image for public fleet cards and boat detail heroes.
 - Migration file `migrations/0006_add_captain_photo_url.sql` adds the `photo_url` column.
+- Migration file `migrations/0008_add_image_crop_fields.sql` adds captain and media crop fields. The remote D1 schema and migration journal were reconciled after older migrations had already been applied outside the journal.
 
 ## Current Roadmap
 

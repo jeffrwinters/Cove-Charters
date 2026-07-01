@@ -7,6 +7,7 @@ class AdminImageCropper {
       focalY: 30,
       zoom: 1,
       frame: 'circle',
+      hint: 'Adjust focus and zoom until the image looks right in the preview.',
       onChange: null,
       ...options
     };
@@ -16,7 +17,7 @@ class AdminImageCropper {
   }
 
   render() {
-    const frameClass = this.options.frame === 'rounded-square' ? 'admin-cropper-frame rounded-square' : 'admin-cropper-frame';
+    const frameClass = this.options.frame === 'wide' ? 'admin-cropper-frame wide' : this.options.frame === 'rounded-square' ? 'admin-cropper-frame rounded-square' : 'admin-cropper-frame';
     this.root.classList.add('admin-cropper');
     this.root.innerHTML = `
       <div class="admin-cropper-stage">
@@ -29,7 +30,7 @@ class AdminImageCropper {
         <label>Vertical focus <input data-crop-y type="range" min="0" max="100" step="1"></label>
         <label>Zoom <input data-crop-zoom type="range" min="1" max="2" step="0.01"></label>
       </div>
-      <p class="admin-cropper-hint">Adjust focus and zoom until the captain headshot looks right in the preview.</p>
+      <p class="admin-cropper-hint">${this.escape(this.options.hint)}</p>
     `;
     this.frame = this.root.querySelector('[data-crop-frame]');
     this.image = this.root.querySelector('[data-crop-image]');
@@ -77,6 +78,17 @@ class AdminImageCropper {
   setImage(imageUrl) {
     this.options.imageUrl = imageUrl || '';
     this.image.src = this.options.imageUrl;
+  }
+
+  setValue(value = {}) {
+    this.options.focalX = Number(value.focalX ?? this.options.focalX ?? 50);
+    this.options.focalY = Number(value.focalY ?? this.options.focalY ?? 50);
+    this.options.zoom = Number(value.zoom ?? this.options.zoom ?? 1);
+    this.sync();
+  }
+
+  escape(value) {
+    return String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 }
 
