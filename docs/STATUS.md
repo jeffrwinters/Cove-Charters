@@ -93,6 +93,7 @@ Completed so far:
 - Public and admin time inputs are constrained and snapped to 30-minute increments.
 - Public booking requests append the availability guidance shown to the customer into customer notes for back-office context.
 - Public booking request form now sets clearer expectations: no payment due today, Cove confirms boat/captain/agreement/payment details, and customers should watch email after submission.
+- Public booking start times are limited to 30-minute increments from 9:00 AM through 6:00 PM; the public booking API enforces the same window on new requests.
 - Admin Command Center has an agreement-aware booking lifecycle Kanban board for new requests, follow-up, packet needed, packet sent, signed/ready, and completed/closed bookings.
 - API base URL, admin token controls, auth status, and raw API/state JSON live under API Debug instead of Command Center.
 - Admin Command Center has a Bookings inbox with status updates.

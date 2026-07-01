@@ -583,6 +583,8 @@ async function bookings(request, env, cors, ctx) {
     if (!body.boatId && !body.boat_id) return json({ error: 'boatId is required' }, 400, cors);
     if (!body.customerName && !(body.firstName || body.lastName)) return json({ error: 'Customer name is required' }, 400, cors);
     if (!body.email && !body.phone) return json({ error: 'Email or phone is required' }, 400, cors);
+    const requestedStartTime = body.startTime || body.start_time || null;
+    if (requestedStartTime && !isPublicBookingStartTime(requestedStartTime)) return json({ error: 'Start time must be between 9:00 AM and 6:00 PM in 30-minute increments.' }, 400, cors);
     const bookingId = body.id || `booking_${crypto.randomUUID()}`;
     const customerId = body.customerId || `customer_${crypto.randomUUID()}`;
     const names = splitName(body.customerName, body.firstName, body.lastName);
@@ -614,7 +616,7 @@ async function bookings(request, env, cors, ctx) {
       'requested',
       'unpaid',
       body.charterDate || body.charter_date || null,
-      body.startTime || body.start_time || null,
+      requestedStartTime,
       Number(body.durationHours || body.duration_hours || 4),
       Number(price?.base_fee || body.baseFee || 0),
       Number(price?.cleaning_fee || 0),
@@ -1362,6 +1364,13 @@ function estimatedEndTime(startTime, durationHours) {
   const hours = Math.floor((endMinutes / 60) % 24);
   const minutes = Math.round(endMinutes % 60);
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+}
+
+function isPublicBookingStartTime(startTime) {
+  const match = String(startTime || '').match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return false;
+  const minutes = Number(match[1]) * 60 + Number(match[2]);
+  return minutes >= 9 * 60 && minutes <= 18 * 60 && minutes % 30 === 0;
 }
 
 function safeJson(value, fallback) {
