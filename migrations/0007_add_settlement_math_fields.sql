@@ -1,0 +1,6 @@
+ALTER TABLE trips ADD COLUMN actual_hours REAL;
+ALTER TABLE settlements ADD COLUMN gross_revenue REAL NOT NULL DEFAULT 0;
+ALTER TABLE settlements ADD COLUMN gross_profit REAL NOT NULL DEFAULT 0;
+ALTER TABLE settlements ADD COLUMN captain_hourly_rate REAL NOT NULL DEFAULT 0;
+ALTER TABLE settlements ADD COLUMN owner_split REAL NOT NULL DEFAULT 0.85;
+ALTER TABLE settlements ADD COLUMN cove_split REAL NOT NULL DEFAULT 0.15;

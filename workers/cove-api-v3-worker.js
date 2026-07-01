@@ -22,6 +22,7 @@ export default {
       if (path.startsWith('/api/v1/availability/')) return await availabilityById(request, env, cors, path.split('/').pop());
       if (path === '/api/v1/bookings') return await bookings(request, env, cors, ctx);
       if (path.match(/^\/api\/v1\/bookings\/[^/]+\/documents$/)) return await bookingDocuments(request, env, cors, path.split('/')[4]);
+      if (path.match(/^\/api\/v1\/bookings\/[^/]+\/settlement$/)) return await bookingSettlement(request, env, cors, path.split('/')[4]);
       if (path.match(/^\/api\/v1\/bookings\/[^/]+\/send-agreement-packet$/)) return await sendAgreementPacket(request, env, cors, path.split('/')[4]);
       if (path.match(/^\/api\/v1\/bookings\/[^/]+\/send-confirmation$/)) return await sendBookingConfirmation(request, env, cors, path.split('/')[4]);
       if (path.match(/^\/api\/v1\/bookings\/[^/]+\/send-captain-packet$/)) return await sendCaptainPacket(request, env, cors, path.split('/')[4]);
@@ -42,7 +43,7 @@ async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
       const resendConfigured = Boolean(env.RESEND_API_KEY && env.BOOKING_NOTIFY_FROM);
-  return json({ ok: true, service: 'cove-api', version: '0.3.24', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
+  return json({ ok: true, service: 'cove-api', version: '0.3.25', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
 }
 
 async function settings(request, env, cors) {
@@ -586,6 +587,185 @@ async function bookingDocuments(request, env, cors, bookingId) {
   return json({ error: 'GET or POST required' }, 405, cors);
 }
 
+async function bookingSettlement(request, env, cors, bookingId) {
+  requireDb(env);
+  const auth = requireAdmin(request, env);
+  if (auth) return json(auth.body, auth.status, cors);
+
+  const bookingRow = await env.DB.prepare(bookingSelectSql('WHERE bk.id = ?')).bind(bookingId).first();
+  if (!bookingRow) return json({ error: 'Booking not found' }, 404, cors);
+  const booking = outBooking(bookingRow);
+
+  if (request.method === 'GET') {
+    const trip = await env.DB.prepare('SELECT * FROM trips WHERE booking_id = ?').bind(bookingId).first();
+    const settlement = await env.DB.prepare('SELECT * FROM settlements WHERE booking_id = ? ORDER BY updated_at DESC LIMIT 1').bind(bookingId).first();
+    const calculation = await calculateSettlement(env, bookingRow, trip || {}, settlement || {});
+    return json({ booking, trip: trip ? outTrip(trip) : null, settlement: settlement ? outSettlement(settlement) : null, calculation }, 200, cors);
+  }
+
+  if (request.method === 'PUT') {
+    const body = await request.json();
+    const currentTrip = await env.DB.prepare('SELECT * FROM trips WHERE booking_id = ?').bind(bookingId).first();
+    const currentSettlement = await env.DB.prepare('SELECT * FROM settlements WHERE booking_id = ? ORDER BY updated_at DESC LIMIT 1').bind(bookingId).first();
+    const calculation = await calculateSettlement(env, bookingRow, currentTrip || {}, { ...currentSettlement, ...body });
+    const tripId = currentTrip?.id || body.tripId || `trip_${crypto.randomUUID()}`;
+    const settlementId = currentSettlement?.id || body.settlementId || `settlement_${crypto.randomUUID()}`;
+    const closeTrip = body.closeTrip || body.officeStatus === 'final' || body.office_status === 'final';
+
+    await env.DB.prepare(`
+      INSERT OR REPLACE INTO trips (
+        id, booking_id, status, actual_hours, start_miles, end_miles, billable_miles, mileage_rate,
+        mileage_charge, fuel_paid_by, fuel_amount, cleaning_fee_charged, damage_reported,
+        damage_notes, captain_notes, office_notes, closed_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CASE WHEN ? THEN COALESCE((SELECT closed_at FROM trips WHERE id = ?), CURRENT_TIMESTAMP) ELSE NULL END, CURRENT_TIMESTAMP)
+    `).bind(
+      tripId,
+      bookingId,
+      closeTrip ? 'closed' : (body.tripStatus || body.trip_status || currentTrip?.status || 'open'),
+      calculation.actualHours,
+      calculation.startMiles,
+      calculation.endMiles,
+      calculation.billableMiles,
+      calculation.mileageRate,
+      calculation.mileageCharge,
+      body.fuelPaidBy || body.fuel_paid_by || currentTrip?.fuel_paid_by || null,
+      calculation.fuelAmount,
+      calculation.cleaningFee > 0 ? 1 : 0,
+      body.damageReported || body.damage_reported || currentTrip?.damage_reported || 0,
+      body.damageNotes || body.damage_notes || currentTrip?.damage_notes || null,
+      body.captainNotes || body.captain_notes || currentTrip?.captain_notes || null,
+      body.officeNotes || body.office_notes || currentTrip?.office_notes || null,
+      closeTrip ? 1 : 0,
+      tripId
+    ).run();
+
+    await env.DB.prepare(`
+      INSERT OR REPLACE INTO settlements (
+        id, booking_id, trip_id, captain_pay, owner_payout, cove_commission, cleaning_fee,
+        tax_collected, fuel_deposit, fuel_deposit_refund, mileage_charge, additional_charges,
+        gross_revenue, gross_profit, captain_hourly_rate, owner_split, cove_split,
+        owner_paid_status, captain_paid_status, customer_paid_status, office_status, notes, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    `).bind(
+      settlementId,
+      bookingId,
+      tripId,
+      calculation.captainPay,
+      calculation.ownerPayout,
+      calculation.coveCommission,
+      calculation.cleaningFee,
+      calculation.taxCollected,
+      calculation.fuelDeposit,
+      calculation.fuelDepositRefund,
+      calculation.mileageCharge,
+      calculation.additionalCharges,
+      calculation.grossRevenue,
+      calculation.grossProfit,
+      calculation.captainHourlyRate,
+      calculation.ownerSplit,
+      calculation.coveSplit,
+      body.ownerPaidStatus || body.owner_paid_status || currentSettlement?.owner_paid_status || 'unpaid',
+      body.captainPaidStatus || body.captain_paid_status || currentSettlement?.captain_paid_status || 'unpaid',
+      body.customerPaidStatus || body.customer_paid_status || currentSettlement?.customer_paid_status || 'unpaid',
+      body.officeStatus || body.office_status || currentSettlement?.office_status || 'draft',
+      body.notes || currentSettlement?.notes || null
+    ).run();
+
+    if (closeTrip) {
+      await env.DB.prepare('UPDATE bookings SET status = ?, paid_status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+        .bind('completed', body.customerPaidStatus || body.customer_paid_status || bookingRow.paid_status || 'unsettled', bookingId)
+        .run();
+    }
+
+    const trip = await env.DB.prepare('SELECT * FROM trips WHERE id = ?').bind(tripId).first();
+    const settlement = await env.DB.prepare('SELECT * FROM settlements WHERE id = ?').bind(settlementId).first();
+    return json({ ok: true, trip: outTrip(trip), settlement: outSettlement(settlement), calculation }, 200, cors);
+  }
+
+  return json({ error: 'GET or PUT required' }, 405, cors);
+}
+
+async function calculateSettlement(env, booking, trip = {}, input = {}) {
+  const mileageRate = num(input.mileageRate ?? input.mileage_rate ?? trip.mileage_rate ?? booking.mileage_rate ?? await setting(env, 'mileage_rate', 14), 14);
+  const captainHourlyRate = num(input.captainHourlyRate ?? input.captain_hourly_rate ?? await setting(env, 'captain_hourly_rate', 125), 125);
+  const ownerSplit = num(input.ownerSplit ?? input.owner_split ?? await setting(env, 'owner_split', 0.85), 0.85);
+  const coveSplit = num(input.coveSplit ?? input.cove_split ?? await setting(env, 'cove_split', 0.15), 0.15);
+  const actualHours = num(input.actualHours ?? input.actual_hours ?? trip.actual_hours ?? booking.duration_hours, 0);
+  const startMiles = nullableNum(input.startMiles ?? input.start_miles ?? trip.start_miles);
+  const endMiles = nullableNum(input.endMiles ?? input.end_miles ?? trip.end_miles);
+  const derivedMiles = startMiles !== null && endMiles !== null ? Math.max(0, endMiles - startMiles) : 0;
+  const billableMiles = num(input.billableMiles ?? input.billable_miles ?? trip.billable_miles ?? derivedMiles, derivedMiles);
+  const mileageCharge = roundMoney(billableMiles * mileageRate);
+  const baseFee = num(input.charterAmount ?? input.baseFee ?? input.base_fee ?? booking.base_fee, 0);
+  const fuelDeposit = num(input.fuelDeposit ?? input.fuel_deposit ?? booking.fuel_deposit, 0);
+  const fuelAmount = num(input.fuelAmount ?? input.fuel_amount ?? trip.fuel_amount, 0);
+  const additionalCharges = num(input.additionalCharges ?? input.additional_charges, 0);
+  const cleaningFee = truthy(input.cleaningFeeCharged ?? input.cleaning_fee_charged ?? trip.cleaning_fee_charged) ? num(input.cleaningFee ?? input.cleaning_fee ?? booking.cleaning_fee, 0) : 0;
+  const taxCollected = num(input.taxCollected ?? input.tax_collected ?? booking.tax_amount, roundMoney(baseFee * num(booking.tax_rate, 0)));
+  const captainPay = roundMoney(num(input.captainPay ?? input.captain_pay, actualHours * captainHourlyRate));
+  const netAfterCaptain = Math.max(0, baseFee - captainPay);
+  const ownerPayout = roundMoney(num(input.ownerPayout ?? input.owner_payout, netAfterCaptain * ownerSplit));
+  const coveCommission = roundMoney(num(input.coveCommission ?? input.cove_commission, netAfterCaptain - ownerPayout));
+  const fuelDepositRefund = roundMoney(Math.max(0, num(input.fuelDepositRefund ?? input.fuel_deposit_refund, fuelDeposit - fuelAmount - mileageCharge - additionalCharges)));
+  const retainedFuelDeposit = Math.max(0, fuelDeposit - fuelDepositRefund);
+  const grossRevenue = roundMoney(num(input.grossRevenue ?? input.gross_revenue, baseFee + cleaningFee + taxCollected + mileageCharge + additionalCharges + retainedFuelDeposit));
+  const grossProfit = roundMoney(num(input.grossProfit ?? input.gross_profit, coveCommission + cleaningFee + mileageCharge + additionalCharges + retainedFuelDeposit));
+  return { actualHours, startMiles, endMiles, billableMiles, mileageRate, mileageCharge, baseFee, cleaningFee, taxCollected, fuelDeposit, fuelAmount, fuelDepositRefund, additionalCharges, captainHourlyRate, captainPay, ownerSplit, coveSplit, ownerPayout, coveCommission, grossRevenue, grossProfit };
+}
+
+function outTrip(row) {
+  return {
+    id: row.id,
+    bookingId: row.booking_id,
+    status: row.status,
+    actualHours: row.actual_hours,
+    startMiles: row.start_miles,
+    endMiles: row.end_miles,
+    billableMiles: row.billable_miles,
+    mileageRate: row.mileage_rate,
+    mileageCharge: row.mileage_charge,
+    fuelPaidBy: row.fuel_paid_by,
+    fuelAmount: row.fuel_amount,
+    cleaningFeeCharged: Boolean(row.cleaning_fee_charged),
+    damageReported: Boolean(row.damage_reported),
+    damageNotes: row.damage_notes,
+    captainNotes: row.captain_notes,
+    officeNotes: row.office_notes,
+    closedAt: row.closed_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function outSettlement(row) {
+  return {
+    id: row.id,
+    bookingId: row.booking_id,
+    tripId: row.trip_id,
+    captainPay: row.captain_pay,
+    ownerPayout: row.owner_payout,
+    coveCommission: row.cove_commission,
+    cleaningFee: row.cleaning_fee,
+    taxCollected: row.tax_collected,
+    fuelDeposit: row.fuel_deposit,
+    fuelDepositRefund: row.fuel_deposit_refund,
+    mileageCharge: row.mileage_charge,
+    additionalCharges: row.additional_charges,
+    grossRevenue: row.gross_revenue,
+    grossProfit: row.gross_profit,
+    captainHourlyRate: row.captain_hourly_rate,
+    ownerSplit: row.owner_split,
+    coveSplit: row.cove_split,
+    ownerPaidStatus: row.owner_paid_status,
+    captainPaidStatus: row.captain_paid_status,
+    customerPaidStatus: row.customer_paid_status,
+    officeStatus: row.office_status,
+    notes: row.notes,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
 async function signingPacket(request, env, cors, token) {
   requireDb(env);
   const row = await env.DB.prepare(bookingSelectSql('WHERE bk.signing_token = ?')).bind(token).first();
@@ -805,15 +985,25 @@ async function attachBookingDocuments(env, bookings) {
   const placeholders = ids.map(() => '?').join(',');
   const rows = await env.DB.prepare(`SELECT * FROM booking_documents WHERE booking_id IN (${placeholders}) ORDER BY created_at DESC`).bind(...ids).all();
   const sigRows = await env.DB.prepare(`SELECT * FROM booking_signatures WHERE booking_id IN (${placeholders}) ORDER BY signed_at DESC`).bind(...ids).all();
+  const tripRows = await env.DB.prepare(`SELECT * FROM trips WHERE booking_id IN (${placeholders})`).bind(...ids).all();
+  const settlementRows = await env.DB.prepare(`SELECT * FROM settlements WHERE booking_id IN (${placeholders}) ORDER BY updated_at DESC`).bind(...ids).all();
   const byBooking = new Map(ids.map(id => [id, []]));
   const signaturesByBooking = new Map(ids.map(id => [id, []]));
+  const tripsByBooking = new Map();
+  const settlementsByBooking = new Map();
   for (const row of rows.results || []) {
     byBooking.get(row.booking_id)?.push(outBookingDocument(row));
   }
   for (const row of sigRows.results || []) {
     signaturesByBooking.get(row.booking_id)?.push(outBookingSignature(row));
   }
-  return bookings.map(booking => ({ ...booking, documents: byBooking.get(booking.id) || [], signatures: signaturesByBooking.get(booking.id) || [] }));
+  for (const row of tripRows.results || []) {
+    tripsByBooking.set(row.booking_id, outTrip(row));
+  }
+  for (const row of settlementRows.results || []) {
+    if (!settlementsByBooking.has(row.booking_id)) settlementsByBooking.set(row.booking_id, outSettlement(row));
+  }
+  return bookings.map(booking => ({ ...booking, documents: byBooking.get(booking.id) || [], signatures: signaturesByBooking.get(booking.id) || [], trip: tripsByBooking.get(booking.id) || null, settlement: settlementsByBooking.get(booking.id) || null }));
 }
 
 function outBookingDocument(row) {
@@ -1496,6 +1686,9 @@ function requireDb(env) { if (!env.DB) throw new Error('D1 binding DB is not con
 function githubHeaders(env) { return { Authorization: `Bearer ${env.GITHUB_TOKEN}`, Accept: 'application/vnd.github+json', 'User-Agent': 'cove-api' }; }
 function corsHeaders(request, env) { const allowed = (env.ALLOWED_ORIGINS || 'https://jeffrwinters.github.io,https://covecharters.com,https://www.covecharters.com').split(',').map(item => item.trim()); const origin = request.headers.get('Origin') || ''; return { 'Access-Control-Allow-Origin': allowed.includes(origin) ? origin : allowed[0], 'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS','Access-Control-Allow-Headers': 'Content-Type,Authorization' }; }
 function json(value, status = 200, headers = {}) { return new Response(JSON.stringify(value, null, 2), { status, headers: { ...headers, 'Content-Type': 'application/json' } }); }
+function num(value, fallback = 0) { const n = Number(value); return Number.isFinite(n) ? n : fallback; }
+function nullableNum(value) { const n = Number(value); return value === null || value === undefined || value === '' || !Number.isFinite(n) ? null : n; }
+function roundMoney(value) { return Math.round(num(value, 0) * 100) / 100; }
 function cleanSegment(value) { return String(value).toLowerCase().replace(/[^a-z0-9-_]+/g, '-').replace(/^-+|-+$/g, '') || 'item'; }
 function cleanFilename(value) { const parts = String(value).split('.'); const ext = parts.length > 1 ? parts.pop().toLowerCase().replace(/[^a-z0-9]/g, '') : 'bin'; return `${cleanSegment(parts.join('.') || 'upload')}.${ext}`; }
 function normalizeEntityType(value) { const clean = cleanSegment(value); return clean.endsWith('s') ? clean.slice(0, -1) : clean; }

@@ -100,3 +100,17 @@ Back office must be able to change operational details, including:
 - Settlement status
 - Notes
 - Payout details
+
+## Current MVP Settlement Formula
+
+The exact spreadsheet source for mileage/payout math has not been located in the repo yet. Until it is recovered and reviewed, the admin settlement calculator uses this conservative D1-backed formula:
+
+- Billable miles = explicit billable miles, or `ending miles - beginning miles`.
+- Mileage charge = billable miles x mileage rate.
+- Captain pay = actual hours x captain hourly rate.
+- Net charter revenue = charter base fee - captain pay.
+- Owner payout = net charter revenue x owner split.
+- Cove commission = net charter revenue - owner payout.
+- Fuel deposit refund = fuel deposit - fuel amount - mileage charge - additional charges, floored at zero.
+
+These values are saved as draft settlement records and should remain editable by back office before final payout.

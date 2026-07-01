@@ -114,6 +114,9 @@ Completed so far:
 - Agreement handling is intentionally post-confirmation: customer booking requests stay lightweight, then back office sends a guided document packet and attaches signed documents to the booking for office/captain access.
 - Source legal copy came from the existing Cove multi-step agreement page, even though all steps share one URL; final business/legal review is still needed before production reliance.
 - Confirmed/completed admin booking cards include MVP trip closeout controls for actual hours, payment status, and closeout notes. Complete Trip stamps office notes, marks the booking completed, and copies a settlement summary.
+- Admin booking cards now include an MVP settlement calculator for post-charter mileage and payout review.
+- Settlement calculator saves trip closeout and draft settlement records to D1 through `PUT /api/v1/bookings/{id}/settlement`.
+- Current settlement assumptions until the source spreadsheet is recovered/reviewed: billable miles are explicit or end miles minus start miles; mileage charge is billable miles times the D1 mileage setting; captain pay is actual hours times the D1 captain hourly rate; owner/Cove split the charter base fee after captain pay; fuel deposit refund is reduced by fuel, mileage, and additional charges.
 - Admin Bookings has filters for status, boat, captain, date range, and text search.
 - Admin Bookings includes a master month calendar for dated booking requests; calendar entries respect the same status, boat, captain, date, and search filters.
 - Booking statuses for admin operations are `requested`, `reviewing`, `confirmed`, `completed`, `declined`, and `cancelled`.
