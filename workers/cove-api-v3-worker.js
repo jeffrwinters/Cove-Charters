@@ -63,7 +63,7 @@ async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
   const resendConfigured = Boolean(env.RESEND_API_KEY && env.BOOKING_NOTIFY_FROM);
-  return json({ ok: true, service: 'cove-api', version: '0.3.49', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), userAuth: true, bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null, stripe: Boolean(env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET) }, 200, cors);
+  return json({ ok: true, service: 'cove-api', version: '0.3.50', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), userAuth: true, bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null, stripe: Boolean(env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET) }, 200, cors);
 }
 
 async function authLogin(request, env, cors) {
@@ -313,11 +313,54 @@ async function upsertBoat(env, boat) {
     Number(boat.sortOrder ?? boat.sort_order ?? 0)
   ).run();
 
-  if (boat.startingPrice !== undefined || boat.priceUnit) {
+  if (Array.isArray(boat.pricingPlans) && boat.pricingPlans.length) {
+    await upsertBoatPricingPlans(env, boat.id, boat.pricingPlans);
+  } else if (boat.startingPrice !== undefined || boat.priceUnit) {
     await env.DB.prepare('INSERT OR REPLACE INTO boat_pricing (id, boat_id, plan_name, duration_hours, base_fee) VALUES (?, ?, ?, ?, ?)')
       .bind(`price_${boat.id}_4h`, boat.id, boat.priceUnit || '4 hour', 4, Number(boat.startingPrice || 0))
       .run();
   }
+}
+
+async function upsertBoatPricingPlans(env, boatId, plans) {
+  const normalized = plans
+    .map(plan => ({
+      id: plan.id || `price_${boatId}_${String(plan.durationHours || plan.duration_hours || 0).replace('.', '_')}h`,
+      boatId,
+      name: String(plan.name || plan.planName || plan.plan_name || `${num(plan.durationHours ?? plan.duration_hours, 0)} hour`).trim(),
+      durationHours: num(plan.durationHours ?? plan.duration_hours, 0),
+      baseFee: num(plan.baseFee ?? plan.base_fee, 0),
+      cleaningFee: num(plan.cleaningFee ?? plan.cleaning_fee, 75),
+      fuelDeposit: num(plan.fuelDeposit ?? plan.fuel_deposit, 500),
+      taxRate: num(plan.taxRate ?? plan.tax_rate, 0.08225),
+      captainHourlyRate: num(plan.captainHourlyRate ?? plan.captain_hourly_rate, 125),
+      ownerSplit: num(plan.ownerSplit ?? plan.owner_split, 0.85),
+      coveSplit: num(plan.coveSplit ?? plan.cove_split, 0.15),
+      active: plan.active === false || plan.active === 0 || plan.active === 'false' ? 0 : 1
+    }))
+    .filter(plan => plan.durationHours > 0);
+
+  if (!normalized.length) return;
+
+  await env.DB.batch(normalized.map(plan => env.DB.prepare(`
+    INSERT OR REPLACE INTO boat_pricing (
+      id, boat_id, plan_name, duration_hours, base_fee, cleaning_fee, fuel_deposit,
+      tax_rate, captain_hourly_rate, owner_split, cove_split, active, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+  `).bind(
+    plan.id,
+    boatId,
+    plan.name,
+    plan.durationHours,
+    plan.baseFee,
+    plan.cleaningFee,
+    plan.fuelDeposit,
+    plan.taxRate,
+    plan.captainHourlyRate,
+    plan.ownerSplit,
+    plan.coveSplit,
+    plan.active
+  )));
 }
 
 function outBoat(row) {
@@ -384,6 +427,9 @@ function outPricingPlan(row) {
     cleaningFee: Number(row.cleaning_fee || 0),
     fuelDeposit: Number(row.fuel_deposit || 0),
     taxRate: Number(row.tax_rate || 0),
+    captainHourlyRate: Number(row.captain_hourly_rate || 0),
+    ownerSplit: Number(row.owner_split || 0),
+    coveSplit: Number(row.cove_split || 0),
     active: Boolean(row.active ?? 1)
   };
 }
