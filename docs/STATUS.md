@@ -18,7 +18,7 @@ The active Worker file is:
 workers/cove-api-v3-worker.js
 ```
 
-The current API version is `0.3.39` after adding a captain-facing assigned-trip packet foundation.
+The current API version is `0.3.40` after adding captain-facing availability management and splitting Admin Bookings into List and Calendar views.
 
 ## Working End To End
 
@@ -119,7 +119,8 @@ Completed so far:
 - Booking emails use Resend REST API when `RESEND_API_KEY` and `BOOKING_NOTIFY_FROM` are configured.
 - Admin confirmed/completed bookings with an assigned captain include Copy Captain Packet and Send Captain Packet. The send action calls `POST /api/v1/bookings/{id}/send-captain-packet`, requires the assigned captain to have an email address, and attaches signed booking documents / configured bareboat template URLs when available.
 - Admin confirmed/completed bookings with an assigned captain include Copy Captain Link. The protected link generator calls `POST /api/v1/bookings/{id}/captain-trip-link` and creates a tokenized `captain-trip.html?token=...` view.
-- Captain trip links load a read-only captain-facing trip packet through `GET /api/v1/captain-trips/{token}` with trip details, customer contact, notes, and captain-visible documents. This is the MVP foundation for the future captain app.
+- Captain trip links load a captain-facing trip packet through `GET /api/v1/captain-trips/{token}` with trip details, customer contact, notes, and captain-visible documents. This is the MVP foundation for the future captain app.
+- Captain trip links now include a token-scoped availability calendar. Captains can create and delete their own unavailable blocks through `POST /api/v1/captain-trips/{token}/availability` and `DELETE /api/v1/captain-trips/{token}/availability/{id}` without receiving admin access.
 - Current MVP email sender uses the temporary `lakefrontatloto.com` domain. Revisit this configuration after Cove controls `covecharters.com`; likely target is `BOOKING_NOTIFY_FROM=bookings@covecharters.com` with replies routed to the back-office inbox.
 - Agreement handling is intentionally post-confirmation: customer booking requests stay lightweight, then back office sends a guided document packet and attaches signed documents to the booking for office/captain access.
 - Source legal copy came from the existing Cove multi-step agreement page, even though all steps share one URL; final business/legal review is still needed before production reliance.
@@ -132,9 +133,10 @@ Completed so far:
 - Current settlement rules: captain pay is actual hours times the captain hourly rate; owner/Cove split the charter fee after captain pay; sales tax is calculated on charter fee plus cleaning fee; total collected includes charter fee, cleaning, tax, fuel deposit, fuel charge, and additional charge line items; fuel deposit refund is reduced by fuel charge and additional charges.
 - Admin now includes a basic Owners manager. Boats can be assigned to an owner from the Boat editor dropdown or from the Owner manager's owned-boats checklist.
 - Admin confirmed/completed bookings can send a final invoice to the customer. The action saves the current settlement first, then emails an itemized final invoice through Resend.
-- Admin Bookings has filters for status, boat, captain, date range, and text search.
+- Admin Bookings has shared filters for status, boat, captain, date range, and text search.
 - Admin Bookings has a summary-list to detail drill-in workflow, with the full booking editor behind the selected record.
-- Admin Bookings includes a master month calendar for dated booking requests; calendar entries respect the same status, boat, captain, date, and search filters.
+- Admin Bookings separates List View and Calendar View so the list drill-in workflow and master schedule do not duplicate controls.
+- Admin Bookings includes a master month calendar for dated booking requests and boat/captain availability blocks; calendar entries respect the same status, boat, captain, date, and search filters.
 - Booking statuses for admin operations are `requested`, `reviewing`, `confirmed`, `completed`, `declined`, and `cancelled`.
 - Booking requests attempt an email notification when the Cloudflare Email Sending binding and notification variables are configured.
 
@@ -150,6 +152,7 @@ Completed so far:
 - `DELETE /api/v1/availability/{id}` deletes a protected admin availability block.
 - Admin Bookings can create boat/captain holds, unavailable windows, maintenance blocks, and captain unavailable blocks.
 - Admin calendar renders availability blocks alongside bookings.
+- Captain-facing trip links can create/delete availability blocks only for the assigned captain tied to that token.
 - Booking cards show availability conflict warnings when their boat or captain overlaps an availability block.
 
 ### Admin UX Refactor Slice

@@ -36,6 +36,8 @@ export default {
       if (path.startsWith('/api/v1/bookings/')) return await bookingById(request, env, cors, path.split('/').pop());
       if (path.match(/^\/api\/v1\/signing\/[^/]+\/record$/)) return await signingRecord(request, env, cors, path.split('/')[4]);
       if (path.match(/^\/api\/v1\/signing\/[^/]+$/)) return await signingPacket(request, env, cors, path.split('/').pop());
+      if (path.match(/^\/api\/v1\/captain-trips\/[^/]+\/availability$/)) return await captainTripAvailability(request, env, cors, path.split('/')[4]);
+      if (path.match(/^\/api\/v1\/captain-trips\/[^/]+\/availability\/[^/]+$/)) return await captainTripAvailabilityById(request, env, cors, path.split('/')[4], path.split('/')[6]);
       if (path.match(/^\/api\/v1\/captain-trips\/[^/]+$/)) return await captainTripPacket(request, env, cors, path.split('/').pop());
       if (path === '/api/v1/settings') return await settings(request, env, cors);
       if (path === '/api/v1/media') return await media(request, env, cors);
@@ -52,7 +54,7 @@ async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
   const resendConfigured = Boolean(env.RESEND_API_KEY && env.BOOKING_NOTIFY_FROM);
-  return json({ ok: true, service: 'cove-api', version: '0.3.39', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
+  return json({ ok: true, service: 'cove-api', version: '0.3.40', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
 }
 
 async function settings(request, env, cors) {
@@ -1426,13 +1428,93 @@ async function captainTripPacket(request, env, cors, token) {
   requireDb(env);
   if (request.method !== 'GET') return json({ error: 'GET required' }, 405, cors);
 
-  const row = await env.DB.prepare(bookingSelectSql('WHERE bk.captain_trip_token = ?')).bind(token).first();
-  if (!row) return json({ error: 'Captain trip packet not found' }, 404, cors);
-  const booking = (await attachBookingDocuments(env, [outBooking(row)]))[0];
-  if (!booking.captainId) return json({ error: 'Trip does not have an assigned captain' }, 404, cors);
-  if (['declined', 'cancelled'].includes(booking.status)) return json({ error: 'This trip is no longer active' }, 410, cors);
+  const booking = await captainTripBooking(env, token);
+  if (booking.error) return json({ error: booking.error }, booking.status, cors);
 
   return json(captainTripPayload(booking), 200, cors);
+}
+
+async function captainTripAvailability(request, env, cors, token) {
+  requireDb(env);
+  const booking = await captainTripBooking(env, token);
+  if (booking.error) return json({ error: booking.error }, booking.status, cors);
+
+  if (request.method === 'GET') {
+    return json(await captainAvailabilityPayload(env, booking, request), 200, cors);
+  }
+  if (request.method === 'POST') {
+    const body = await request.json();
+    if (!body.startAt) return json({ error: 'startAt is required' }, 400, cors);
+    if (!body.endAt) return json({ error: 'endAt is required' }, 400, cors);
+    if (body.endAt <= body.startAt) return json({ error: 'endAt must be after startAt' }, 400, cors);
+    const id = `availability_${crypto.randomUUID()}`;
+    await upsertAvailability(env, {
+      id,
+      entityType: 'captain',
+      entityId: booking.captainId,
+      startAt: body.startAt,
+      endAt: body.endAt,
+      status: body.status || 'captain_unavailable',
+      notes: body.notes || 'Captain availability block'
+    });
+    const row = await env.DB.prepare('SELECT * FROM availability WHERE id = ?').bind(id).first();
+    return json({ ok: true, availability: outAvailability(row) }, 201, cors);
+  }
+  return json({ error: 'GET or POST required' }, 405, cors);
+}
+
+async function captainTripAvailabilityById(request, env, cors, token, id) {
+  requireDb(env);
+  const booking = await captainTripBooking(env, token);
+  if (booking.error) return json({ error: booking.error }, booking.status, cors);
+  const row = await env.DB.prepare('SELECT * FROM availability WHERE id = ?').bind(id).first();
+  if (!row || row.entity_type !== 'captain' || row.entity_id !== booking.captainId) {
+    return json({ error: 'Availability block not found' }, 404, cors);
+  }
+  if (request.method === 'DELETE') {
+    await env.DB.prepare('DELETE FROM availability WHERE id = ?').bind(id).run();
+    return json({ ok: true, id }, 200, cors);
+  }
+  return json({ error: 'DELETE required' }, 405, cors);
+}
+
+async function captainTripBooking(env, token) {
+  const row = await env.DB.prepare(bookingSelectSql('WHERE bk.captain_trip_token = ?')).bind(token).first();
+  if (!row) return { error: 'Captain trip packet not found', status: 404 };
+  const booking = (await attachBookingDocuments(env, [outBooking(row)]))[0];
+  if (!booking.captainId) return { error: 'Trip does not have an assigned captain', status: 404 };
+  if (['declined', 'cancelled'].includes(booking.status)) return { error: 'This trip is no longer active', status: 410 };
+  return booking;
+}
+
+async function captainAvailabilityPayload(env, booking, request) {
+  const url = new URL(request.url);
+  const from = url.searchParams.get('from') || `${new Date().getFullYear()}-01-01`;
+  const to = url.searchParams.get('to') || `${new Date().getFullYear() + 1}-12-31`;
+  const availability = await env.DB.prepare(`
+    SELECT * FROM availability
+    WHERE entity_type = 'captain' AND entity_id = ? AND end_at >= ? AND start_at <= ?
+    ORDER BY start_at ASC
+  `).bind(booking.captainId, from, to).all();
+  const trips = await env.DB.prepare(bookingSelectSql(`
+    WHERE bk.captain_id = ?
+      AND bk.status IN ('confirmed', 'completed')
+      AND COALESCE(bk.charter_date, '') >= ?
+      AND COALESCE(bk.charter_date, '') <= ?
+    ORDER BY bk.charter_date ASC, bk.start_time ASC
+  `)).bind(booking.captainId, from.slice(0, 10), to.slice(0, 10)).all();
+  return {
+    availability: (availability.results || []).map(outAvailability),
+    trips: (trips.results || []).map(outBooking).map(trip => ({
+      id: trip.id,
+      status: trip.status,
+      boatName: trip.boatName,
+      charterDate: trip.charterDate,
+      startTime: trip.startTime,
+      durationHours: trip.durationHours,
+      customerName: trip.customerName
+    }))
+  };
 }
 
 async function ensureCaptainTripLink(env, booking) {

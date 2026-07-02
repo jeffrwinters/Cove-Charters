@@ -189,6 +189,8 @@ Important fields:
 
 Generic availability table for boats/captains.
 
+Captain-facing availability management reuses this table with `entity_type='captain'`. Tokenized captain trip links may create/delete only rows for their assigned `captain_id`; back office keeps full admin control through the existing `/api/v1/availability` endpoints.
+
 ### documents
 
 Stores charter agreements and related documents.
