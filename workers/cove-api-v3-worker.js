@@ -63,7 +63,7 @@ async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
   const resendConfigured = Boolean(env.RESEND_API_KEY && env.BOOKING_NOTIFY_FROM);
-  return json({ ok: true, service: 'cove-api', version: '0.3.46', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), userAuth: true, bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null, stripe: Boolean(env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET) }, 200, cors);
+  return json({ ok: true, service: 'cove-api', version: '0.3.47', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), userAuth: true, bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null, stripe: Boolean(env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET) }, 200, cors);
 }
 
 async function authLogin(request, env, cors) {
@@ -729,6 +729,34 @@ async function touchBookingCustomer(env, id, body, names) {
   });
 }
 
+async function touchBookingCustomerFast(env, id, body, names) {
+  await env.DB.prepare(`
+    INSERT INTO customers (
+      id, first_name, last_name, email, phone, notes, status, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(id) DO UPDATE SET
+      first_name = COALESCE(excluded.first_name, first_name),
+      last_name = COALESCE(excluded.last_name, last_name),
+      email = COALESCE(excluded.email, email),
+      phone = COALESCE(excluded.phone, phone),
+      notes = CASE
+        WHEN excluded.notes IS NULL OR excluded.notes = '' THEN notes
+        WHEN notes IS NULL OR notes = '' THEN excluded.notes
+        ELSE notes || char(10) || excluded.notes
+      END,
+      status = CASE WHEN status IN ('vip', 'banned') THEN status ELSE 'repeat' END,
+      updated_at = CURRENT_TIMESTAMP
+  `).bind(
+    id,
+    names.firstName || null,
+    names.lastName || null,
+    body.email || null,
+    body.phone || null,
+    body.customerNotes || body.notes || null,
+    'new'
+  ).run();
+}
+
 function splitBookingNotes(body) {
   const customerSource = String(body.customerNotes ?? body.customer_notes ?? body.notes ?? '').trim();
   const officeSource = String(body.officeNotes ?? body.office_notes ?? '').trim();
@@ -892,7 +920,7 @@ async function bookings(request, env, cors, ctx) {
       LIMIT 1
     `).bind(body.boatId || body.boat_id).first();
 
-    await touchBookingCustomer(env, customerId, customerBody, names);
+    await touchBookingCustomerFast(env, customerId, customerBody, names);
 
     await env.DB.prepare(`
       INSERT INTO bookings (
@@ -915,7 +943,7 @@ async function bookings(request, env, cors, ctx) {
       Number(price?.cleaning_fee || 0),
       Number(price?.fuel_deposit || 0),
       Number(price?.tax_rate || 0.08225),
-      Number(await setting(env, 'mileage_rate', 14)),
+      Number(env.DEFAULT_MILEAGE_RATE || 14),
       bookingNotes.officeNotes
     ).run();
 
@@ -923,7 +951,7 @@ async function bookings(request, env, cors, ctx) {
     const booking = outBooking(row);
     const emailTask = sendBookingNotification(env, booking).catch(error => console.error('Booking notification failed', error));
     if (ctx?.waitUntil) ctx.waitUntil(emailTask); else await emailTask;
-    return json({ ok: true, id: bookingId, booking: (await attachBookingDocuments(env, [booking]))[0] }, 201, cors);
+    return json({ ok: true, id: bookingId, booking }, 201, cors);
   }
   return json({ error: 'GET or POST required' }, 405, cors);
 }
