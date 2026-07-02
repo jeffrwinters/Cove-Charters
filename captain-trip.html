@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cove Charters | Captain Trip</title>
+  <meta name="description" content="Captain trip details for an assigned Cove Charters booking." />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    :root{--navy:#071923;--water:#0f6f8f;--sand:#f2dfbd;--ink:#10212b;--muted:#667987;--bg:#f8f3e9;--line:#dbe7eb;--good:#1f8a5b;--bad:#a43c3c;--shadow:0 22px 60px rgba(7,25,35,.14)}*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,sans-serif;color:var(--ink);background:var(--bg)}a{color:inherit}.wrap{width:min(960px,calc(100% - 32px));margin:auto;padding-bottom:40px}.nav{padding:22px 0}.brand{font-weight:900;letter-spacing:.08em;text-transform:uppercase}.hero,.card{background:white;border:1px solid rgba(16,33,43,.08);border-radius:24px;box-shadow:var(--shadow);padding:24px}.hero{background:var(--navy);color:white}.hero h1{margin:8px 0 10px;font-size:clamp(34px,7vw,62px);line-height:.92;letter-spacing:-.06em}.hero p{color:rgba(255,255,255,.76);line-height:1.6}.kicker{font-size:12px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;color:var(--sand)}.meta,.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}.pill{padding:8px 10px;border-radius:999px;background:#eef6f8;color:#3f5965;font-size:12px;font-weight:900}.hero .pill{background:rgba(255,255,255,.1);color:white;border:1px solid rgba(255,255,255,.18)}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:18px}.card{margin:18px 0}.card h2{margin:0 0 12px;font-size:26px;letter-spacing:-.04em}.detail{border-radius:16px;background:#f8fbfc;border:1px solid var(--line);padding:14px}.detail span{display:block;color:var(--muted);font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:.06em}.detail strong{display:block;margin-top:5px;font-size:17px;line-height:1.3;overflow-wrap:anywhere}.btn{display:inline-flex;align-items:center;justify-content:center;min-height:42px;padding:0 16px;border-radius:999px;background:var(--navy);color:white;font-weight:900;text-decoration:none}.btn.light{background:#eef6f8;color:var(--navy);border:1px solid #d8e4e8}.note{white-space:pre-wrap;line-height:1.55;color:#304854}.status{font-weight:900;color:var(--muted)}.status.good{color:var(--good)}.status.bad{color:var(--bad)}@media(max-width:680px){.wrap{width:min(100% - 24px,960px)}.hero,.card{border-radius:20px;padding:20px}.grid{grid-template-columns:1fr}.actions .btn{width:100%}}@media print{body{background:white}.wrap{width:100%;padding:0}.hero,.card{box-shadow:none;break-inside:avoid}.hero{background:white;color:var(--ink)}.hero p{color:var(--muted)}.kicker{color:var(--water)}.btn{border:1px solid var(--line);background:white;color:var(--ink)}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <nav class="nav"><div class="brand">Cove Charters</div></nav>
+    <section class="hero"><div class="kicker">Captain Trip</div><h1 id="title">Assigned charter.</h1><p id="intro">Loading trip details...</p><div class="meta" id="meta"></div></section>
+    <main id="app"><section class="card"><p class="status">Loading...</p></section></main>
+  </div>
+  <script>
+    const COVE_API='https://cove-api.jeff-r-winters.workers.dev';
+    const token=new URLSearchParams(location.search).get('token')||'';
+    const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    function detail(label,value){return `<div class="detail"><span>${esc(label)}</span><strong>${esc(value||'Not provided')}</strong></div>`;}
+    function render(data){const b=data.booking||{};title.textContent=b.boatName||'Assigned charter';intro.textContent=`${b.charterDate||'Date TBD'} at ${b.startTime||'time TBD'} with ${b.customerName||'the customer'}.`;meta.innerHTML=[b.status,b.agreementStatus,b.durationHours?`${b.durationHours} hours`:null,b.captainName].filter(Boolean).map(x=>`<span class="pill">${esc(x)}</span>`).join('');const docs=data.documents||[];app.innerHTML=`<section class="card"><h2>Trip details</h2><div class="grid">${detail('Boat',b.boatName||b.boatId)}${detail('Date',b.charterDate)}${detail('Start time',b.startTime)}${detail('Duration',b.durationHours?`${b.durationHours} hours`:'')}${detail('Booking status',b.status)}${detail('Agreement',b.agreementStatus)}</div></section><section class="card"><h2>Customer</h2><div class="grid">${detail('Name',b.customerName)}${detail('Phone',b.customerPhone)}${detail('Email',b.customerEmail)}</div><div class="actions">${b.customerPhone?`<a class="btn" href="tel:${esc(b.customerPhone)}">Call Customer</a>`:''}${b.customerEmail?`<a class="btn light" href="mailto:${esc(b.customerEmail)}">Email Customer</a>`:''}</div></section><section class="card"><h2>Notes</h2><p class="note">${esc(b.customerNotes||'No customer notes provided.')}</p>${b.officeNotes?`<p class="note">${esc(b.officeNotes)}</p>`:''}</section><section class="card"><h2>Documents</h2>${docs.length?`<div class="actions">${docs.map(doc=>`<a class="btn light" href="${esc(doc.url)}" target="_blank" rel="noopener">${esc(doc.title||'Open document')}</a>`).join('')}</div>`:'<p class="status">No signed/supporting documents are attached yet.</p>'}</section>`;}
+    async function load(){try{if(!token)throw new Error('Missing captain trip token.');const r=await fetch(`${COVE_API}/api/v1/captain-trips/${encodeURIComponent(token)}`,{cache:'no-store'});const d=await r.json();if(!r.ok)throw new Error(d.error||'Could not load captain trip.');render(d);}catch(error){app.innerHTML=`<section class="card"><p class="status bad">${esc(error.message)}</p></section>`;}}
+    load();
+  </script>
+</body>
+</html>

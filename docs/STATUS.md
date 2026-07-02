@@ -18,7 +18,7 @@ The active Worker file is:
 workers/cove-api-v3-worker.js
 ```
 
-The current API version is `0.3.38` after adding structured accounting records for settlement closeout.
+The current API version is `0.3.39` after adding a captain-facing assigned-trip packet foundation.
 
 ## Working End To End
 
@@ -118,6 +118,8 @@ Completed so far:
 - Signed charter documents and supporting files can be attached to booking records through `POST /api/v1/bookings/{id}/documents`; the endpoint accepts existing document URLs and direct multipart file uploads.
 - Booking emails use Resend REST API when `RESEND_API_KEY` and `BOOKING_NOTIFY_FROM` are configured.
 - Admin confirmed/completed bookings with an assigned captain include Copy Captain Packet and Send Captain Packet. The send action calls `POST /api/v1/bookings/{id}/send-captain-packet`, requires the assigned captain to have an email address, and attaches signed booking documents / configured bareboat template URLs when available.
+- Admin confirmed/completed bookings with an assigned captain include Copy Captain Link. The protected link generator calls `POST /api/v1/bookings/{id}/captain-trip-link` and creates a tokenized `captain-trip.html?token=...` view.
+- Captain trip links load a read-only captain-facing trip packet through `GET /api/v1/captain-trips/{token}` with trip details, customer contact, notes, and captain-visible documents. This is the MVP foundation for the future captain app.
 - Current MVP email sender uses the temporary `lakefrontatloto.com` domain. Revisit this configuration after Cove controls `covecharters.com`; likely target is `BOOKING_NOTIFY_FROM=bookings@covecharters.com` with replies routed to the back-office inbox.
 - Agreement handling is intentionally post-confirmation: customer booking requests stay lightweight, then back office sends a guided document packet and attaches signed documents to the booking for office/captain access.
 - Source legal copy came from the existing Cove multi-step agreement page, even though all steps share one URL; final business/legal review is still needed before production reliance.

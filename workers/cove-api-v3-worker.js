@@ -30,11 +30,13 @@ export default {
       if (path.match(/^\/api\/v1\/bookings\/[^/]+\/settlement$/)) return await bookingSettlement(request, env, cors, path.split('/')[4]);
       if (path.match(/^\/api\/v1\/bookings\/[^/]+\/send-agreement-packet$/)) return await sendAgreementPacket(request, env, cors, path.split('/')[4]);
       if (path.match(/^\/api\/v1\/bookings\/[^/]+\/send-confirmation$/)) return await sendBookingConfirmation(request, env, cors, path.split('/')[4]);
+      if (path.match(/^\/api\/v1\/bookings\/[^/]+\/captain-trip-link$/)) return await captainTripLink(request, env, cors, path.split('/')[4]);
       if (path.match(/^\/api\/v1\/bookings\/[^/]+\/send-captain-packet$/)) return await sendCaptainPacket(request, env, cors, path.split('/')[4]);
       if (path.match(/^\/api\/v1\/bookings\/[^/]+\/send-final-invoice$/)) return await sendFinalInvoice(request, env, cors, path.split('/')[4]);
       if (path.startsWith('/api/v1/bookings/')) return await bookingById(request, env, cors, path.split('/').pop());
       if (path.match(/^\/api\/v1\/signing\/[^/]+\/record$/)) return await signingRecord(request, env, cors, path.split('/')[4]);
       if (path.match(/^\/api\/v1\/signing\/[^/]+$/)) return await signingPacket(request, env, cors, path.split('/').pop());
+      if (path.match(/^\/api\/v1\/captain-trips\/[^/]+$/)) return await captainTripPacket(request, env, cors, path.split('/').pop());
       if (path === '/api/v1/settings') return await settings(request, env, cors);
       if (path === '/api/v1/media') return await media(request, env, cors);
       if (path.startsWith('/api/v1/media/')) return await mediaById(request, env, cors, path.split('/').pop());
@@ -50,7 +52,7 @@ async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
   const resendConfigured = Boolean(env.RESEND_API_KEY && env.BOOKING_NOTIFY_FROM);
-  return json({ ok: true, service: 'cove-api', version: '0.3.38', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
+  return json({ ok: true, service: 'cove-api', version: '0.3.39', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
 }
 
 async function settings(request, env, cors) {
@@ -1291,7 +1293,8 @@ async function signingPacket(request, env, cors, token) {
       'office,captain'
     ).run();
 
-    await sendSignedAgreementNotice(env, { ...booking, signatureId, signerName: body.signerName, signerEmail: body.signerEmail || booking.email || null, signedRecordUrl: summaryUrl }).catch(error => {
+    const captainTrip = booking.captainId ? await ensureCaptainTripLink(env, booking) : null;
+    await sendSignedAgreementNotice(env, { ...booking, captainTripUrl: captainTrip?.url || booking.captainTripUrl, signatureId, signerName: body.signerName, signerEmail: body.signerEmail || booking.email || null, signedRecordUrl: summaryUrl }).catch(error => {
       console.warn('Signed agreement notice failed', error?.message || error);
     });
 
@@ -1393,15 +1396,94 @@ async function sendCaptainPacket(request, env, cors, id) {
     return json({ ok: false, sent: false, configured: false, provider: 'resend', error: 'Captain email is not configured' }, 501, cors);
   }
 
-  const result = await sendCaptainTripPacket(env, booking);
-  const note = `[${new Date().toLocaleString('en-US', { timeZone: 'America/Chicago' })}] Captain packet sent to ${booking.captainName || booking.captainEmail}`;
+  const link = await ensureCaptainTripLink(env, booking);
+  const result = await sendCaptainTripPacket(env, { ...booking, captainTripUrl: link.url });
+  const note = `[${new Date().toLocaleString('en-US', { timeZone: 'America/Chicago' })}] Captain packet sent to ${booking.captainName || booking.captainEmail}${link.url ? ` (${link.url})` : ''}`;
   await env.DB.prepare(`
     UPDATE bookings
-    SET office_notes = ?, updated_at = CURRENT_TIMESTAMP
+    SET office_notes = ?, captain_trip_sent_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `).bind([booking.officeNotes, note].filter(Boolean).join('\n'), id).run();
 
-  return json({ ok: true, sent: true, result }, 200, cors);
+  return json({ ok: true, sent: true, result, captainTripUrl: link.url }, 200, cors);
+}
+
+async function captainTripLink(request, env, cors, id) {
+  requireDb(env);
+  const auth = requireAdmin(request, env);
+  if (auth) return json(auth.body, auth.status, cors);
+  if (request.method !== 'POST') return json({ error: 'POST required' }, 405, cors);
+
+  const row = await env.DB.prepare(bookingSelectSql('WHERE bk.id = ?')).bind(id).first();
+  if (!row) return json({ error: 'Booking not found' }, 404, cors);
+  const booking = outBooking(row);
+  if (!booking.captainId) return json({ error: 'Booking does not have an assigned captain' }, 400, cors);
+  const link = await ensureCaptainTripLink(env, booking);
+  return json({ ok: true, captainTripUrl: link.url, captainTripToken: link.token }, 200, cors);
+}
+
+async function captainTripPacket(request, env, cors, token) {
+  requireDb(env);
+  if (request.method !== 'GET') return json({ error: 'GET required' }, 405, cors);
+
+  const row = await env.DB.prepare(bookingSelectSql('WHERE bk.captain_trip_token = ?')).bind(token).first();
+  if (!row) return json({ error: 'Captain trip packet not found' }, 404, cors);
+  const booking = (await attachBookingDocuments(env, [outBooking(row)]))[0];
+  if (!booking.captainId) return json({ error: 'Trip does not have an assigned captain' }, 404, cors);
+  if (['declined', 'cancelled'].includes(booking.status)) return json({ error: 'This trip is no longer active' }, 410, cors);
+
+  return json(captainTripPayload(booking), 200, cors);
+}
+
+async function ensureCaptainTripLink(env, booking) {
+  const token = booking.captainTripToken || crypto.randomUUID();
+  const url = booking.captainTripUrl || `${publicSiteUrl(env)}/captain-trip.html?token=${encodeURIComponent(token)}`;
+  if (!booking.captainTripToken || !booking.captainTripUrl) {
+    await env.DB.prepare(`
+      UPDATE bookings
+      SET captain_trip_token = COALESCE(captain_trip_token, ?),
+        captain_trip_url = COALESCE(captain_trip_url, ?),
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).bind(token, url, booking.id).run();
+  }
+  return { token, url };
+}
+
+function captainTripPayload(booking) {
+  return {
+    booking: {
+      id: booking.id,
+      status: booking.status,
+      agreementStatus: booking.agreementStatus,
+      boatName: booking.boatName,
+      boatId: booking.boatId,
+      boatSlug: booking.boatSlug,
+      captainName: booking.captainName,
+      captainEmail: booking.captainEmail,
+      captainPhone: booking.captainPhone,
+      charterDate: booking.charterDate,
+      startTime: booking.startTime,
+      durationHours: booking.durationHours,
+      customerName: booking.customerName,
+      customerPhone: booking.phone,
+      customerEmail: booking.email,
+      customerNotes: booking.customerNotes,
+      officeNotes: booking.officeNotes,
+      signedAt: booking.agreementSignedAt,
+      captainTripUrl: booking.captainTripUrl
+    },
+    documents: (booking.documents || [])
+      .filter(doc => doc.url)
+      .filter(doc => String(doc.audience || '').includes('captain') || ['signed', 'final'].includes(String(doc.status || '').toLowerCase()) || String(doc.documentType || '').includes('agreement'))
+      .map(doc => ({
+        title: doc.title || doc.documentType || 'Document',
+        url: doc.url,
+        status: doc.status,
+        documentType: doc.documentType,
+        createdAt: doc.createdAt
+      }))
+  };
 }
 
 async function sendFinalInvoice(request, env, cors, id) {
@@ -1480,6 +1562,9 @@ function outBooking(row) {
     signingUrl: row.signing_url,
     signingToken: row.signing_token,
     signingCompletedAt: row.signing_completed_at,
+    captainTripUrl: row.captain_trip_url,
+    captainTripToken: row.captain_trip_token,
+    captainTripSentAt: row.captain_trip_sent_at,
     documents: [],
     signatures: [],
     createdAt: row.created_at,
@@ -1814,6 +1899,7 @@ async function sendCaptainTripPacket(env, booking) {
     <h2>Cove captain trip packet</h2>
     <p>Hi ${escapeHtml(booking.captainName || 'Captain')},</p>
     <p>This confirmed charter is assigned to you.</p>
+    ${booking.captainTripUrl ? `<p><a href="${escapeHtml(booking.captainTripUrl)}">Open your captain trip view</a></p>` : ''}
     <p><strong>Boat:</strong> ${escapeHtml(booking.boatName || booking.boatId)}<br><strong>Date:</strong> ${escapeHtml(booking.charterDate || 'TBD')}<br><strong>Start:</strong> ${escapeHtml(booking.startTime || 'TBD')}<br><strong>Duration:</strong> ${escapeHtml(booking.durationHours || 'TBD')} hours</p>
     <h3>Customer</h3>
     <p>${escapeHtml(booking.customerName || 'Guest')}<br>${escapeHtml(booking.phone || 'No phone')}<br>${escapeHtml(booking.email || 'No email')}</p>
@@ -1877,6 +1963,7 @@ async function sendSignedAgreementNotice(env, booking) {
     `Duration: ${booking.durationHours || 'TBD'} hours`,
     ``,
     `Signed record: ${booking.signedRecordUrl}`,
+    booking.captainTripUrl ? `Captain trip view: ${booking.captainTripUrl}` : '',
     booking.signingUrl ? `Customer signing packet: ${booking.signingUrl}` : ''
   ].filter(line => line !== '');
   const html = `
@@ -1884,6 +1971,7 @@ async function sendSignedAgreementNotice(env, booking) {
     <p>This Cove charter is confirmed, and ${escapeHtml(booking.signerName || booking.customerName || 'the customer')} has completed the required charter documents.</p>
     <p>Please review the booking details and signed record before the trip.</p>
     <p><strong>Booking:</strong> ${escapeHtml(booking.id)}<br><strong>Boat:</strong> ${escapeHtml(booking.boatName || booking.boatId)}<br><strong>Captain:</strong> ${escapeHtml(booking.captainName || 'Captain TBD')}<br><strong>Date:</strong> ${escapeHtml(booking.charterDate || 'TBD')} ${escapeHtml(booking.startTime || '')}</p>
+    ${booking.captainTripUrl ? `<p><a href="${escapeHtml(booking.captainTripUrl)}">Open captain trip view</a></p>` : ''}
     <p><a href="${escapeHtml(booking.signedRecordUrl)}">Open the signed record in Cove Admin</a></p>
   `;
   return await sendResendEmail(env, {
@@ -1955,6 +2043,7 @@ function captainPacketLines(booking) {
     `Hi ${booking.captainName || 'Captain'},`,
     ``,
     `This confirmed Cove charter is assigned to you.`,
+    booking.captainTripUrl ? `Open your captain trip view: ${booking.captainTripUrl}` : '',
     ``,
     `Booking: ${booking.id}`,
     `Boat: ${booking.boatName || booking.boatId}`,

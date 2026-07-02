@@ -101,6 +101,11 @@ Agreement workflow fields:
 - `signing_url`
 - `signing_token`
 - `signing_completed_at`
+- `captain_trip_token`
+- `captain_trip_url`
+- `captain_trip_sent_at`
+
+Captain trip links use `captain-trip.html?token=...` and expose a read-only captain-facing packet for assigned trips.
 
 ### booking_documents
 
