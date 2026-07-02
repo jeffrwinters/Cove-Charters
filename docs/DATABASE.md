@@ -188,6 +188,12 @@ Important fields:
 
 Settlement saves regenerate the `settlement_calculation` rows for the current settlement so closeout edits stay aligned with customer charges, customer credits, captain payout, owner payout, and Cove commission.
 
+### payments
+
+Prepared by `migrations/0016_create_payments.sql` for the upcoming Stripe integration.
+
+Stores external payment processor audit records for booking deposits, final invoices, and custom charges. `bookings.paid_status`, `settlements.customer_paid_status`, and `accounting_records` remain the operational/reporting source of truth; `payments` stores Stripe session/payment references, checkout URL, amount in cents, currency, purpose, status, and metadata.
+
 ### media
 
 Generic media table used by boats and captains.
