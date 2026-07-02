@@ -46,7 +46,7 @@ Public webhook:
 
 ## Suggested Data Model
 
-`migrations/0016_create_payments.sql` creates a `payments` table for Stripe audit records:
+`migrations/0016_upgrade_payments_for_stripe.sql` upgrades the existing `payments` table for Stripe audit records:
 
 - `id`
 - `booking_id`
@@ -77,4 +77,4 @@ Relationship to existing records:
 - Prefer Stripe-hosted Checkout for PCI scope.
 - Do not put card fields into Cove pages for MVP.
 - Use test mode first and record the Stripe object IDs in office notes for troubleshooting.
-- Apply `0016_create_payments.sql` to D1 before deploying Worker code that writes payment records.
+- Apply `0016_upgrade_payments_for_stripe.sql` to D1 before deploying Worker code that writes Stripe payment records.

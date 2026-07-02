@@ -190,9 +190,11 @@ Settlement saves regenerate the `settlement_calculation` rows for the current se
 
 ### payments
 
-Prepared by `migrations/0016_create_payments.sql` for the upcoming Stripe integration.
+Tracks payment movement and external references.
 
-Stores external payment processor audit records for booking deposits, final invoices, and custom charges. `bookings.paid_status`, `settlements.customer_paid_status`, and `accounting_records` remain the operational/reporting source of truth; `payments` stores Stripe session/payment references, checkout URL, amount in cents, currency, purpose, status, and metadata.
+`migrations/0016_upgrade_payments_for_stripe.sql` prepares this existing table for the upcoming Stripe integration by adding provider/session/payment-intent fields, checkout URL, purpose, currency, and metadata JSON.
+
+`bookings.paid_status`, `settlements.customer_paid_status`, and `accounting_records` remain the operational/reporting source of truth; `payments` stores the external processor audit trail.
 
 ### media
 
@@ -223,10 +225,6 @@ Captain-facing availability management reuses this table with `entity_type='capt
 ### documents
 
 Stores charter agreements and related documents.
-
-### payments
-
-Tracks payment movement and external references.
 
 ### audit_log
 
