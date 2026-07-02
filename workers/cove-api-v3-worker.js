@@ -59,7 +59,7 @@ async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
   const resendConfigured = Boolean(env.RESEND_API_KEY && env.BOOKING_NOTIFY_FROM);
-  return json({ ok: true, service: 'cove-api', version: '0.3.42', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), userAuth: true, bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
+  return json({ ok: true, service: 'cove-api', version: '0.3.43', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), userAuth: true, bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
 }
 
 async function authLogin(request, env, cors) {
@@ -725,6 +725,25 @@ async function touchBookingCustomer(env, id, body, names) {
   });
 }
 
+function splitBookingNotes(body) {
+  const customerSource = String(body.customerNotes ?? body.customer_notes ?? body.notes ?? '').trim();
+  const officeSource = String(body.officeNotes ?? body.office_notes ?? '').trim();
+  const customerBlocks = [];
+  const officeBlocks = officeSource ? [officeSource] : [];
+  for (const block of customerSource.split(/\n{2,}/).map(part => part.trim()).filter(Boolean)) {
+    if (isGeneratedAvailabilityNote(block)) officeBlocks.push(block);
+    else customerBlocks.push(block);
+  }
+  return {
+    customerNotes: customerBlocks.join('\n\n') || null,
+    officeNotes: officeBlocks.join('\n\n') || null
+  };
+}
+
+function isGeneratedAvailabilityNote(value) {
+  return /^(Customer saw (likely open availability|availability warning) for |Availability check unavailable:)/.test(String(value || '').trim());
+}
+
 function outCustomer(row) {
   const name = [row.first_name, row.last_name].filter(Boolean).join(' ').trim();
   return {
@@ -859,6 +878,8 @@ async function bookings(request, env, cors, ctx) {
     const bookingId = body.id || `booking_${crypto.randomUUID()}`;
     const names = splitName(body.customerName, body.firstName, body.lastName);
     const customerId = body.customerId || await findExistingCustomerId(env, body) || `customer_${crypto.randomUUID()}`;
+    const bookingNotes = splitBookingNotes(body);
+    const customerBody = { ...body, notes: bookingNotes.customerNotes, customerNotes: bookingNotes.customerNotes, officeNotes: bookingNotes.officeNotes };
     const price = await env.DB.prepare(`
       SELECT id, base_fee, cleaning_fee, fuel_deposit, tax_rate
       FROM boat_pricing
@@ -867,7 +888,7 @@ async function bookings(request, env, cors, ctx) {
       LIMIT 1
     `).bind(body.boatId || body.boat_id).first();
 
-    await touchBookingCustomer(env, customerId, body, names);
+    await touchBookingCustomer(env, customerId, customerBody, names);
 
     await env.DB.prepare(`
       INSERT INTO bookings (
@@ -891,7 +912,7 @@ async function bookings(request, env, cors, ctx) {
       Number(price?.fuel_deposit || 0),
       Number(price?.tax_rate || 0.08225),
       Number(await setting(env, 'mileage_rate', 14)),
-      body.officeNotes ?? body.office_notes ?? null
+      bookingNotes.officeNotes
     ).run();
 
     const row = await env.DB.prepare(bookingSelectSql('WHERE bk.id = ?')).bind(bookingId).first();
