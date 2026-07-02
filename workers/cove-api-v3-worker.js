@@ -63,7 +63,7 @@ async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
   const resendConfigured = Boolean(env.RESEND_API_KEY && env.BOOKING_NOTIFY_FROM);
-  return json({ ok: true, service: 'cove-api', version: '0.3.48', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), userAuth: true, bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null, stripe: Boolean(env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET) }, 200, cors);
+  return json({ ok: true, service: 'cove-api', version: '0.3.49', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), userAuth: true, bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null, stripe: Boolean(env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET) }, 200, cors);
 }
 
 async function authLogin(request, env, cors) {
@@ -203,7 +203,7 @@ async function boats(request, env, cors) {
       ORDER BY sort_order ASC, featured DESC, name ASC
     `).all();
     const boatsWithCaptains = await withApprovedCaptainIds(env, rows.results || []);
-    return json(boatsWithCaptains.map(outBoat), 200, cors);
+    return json((await withBoatPricing(env, boatsWithCaptains)).map(outBoat), 200, cors);
   }
   if (request.method === 'POST') {
     const auth = await requireAdmin(request, env);
@@ -249,7 +249,7 @@ async function boatById(request, env, cors, id) {
       WHERE b.id = ? OR b.slug = ?
     `).bind(id, id).first();
     if (!row) return json({ error: 'Boat not found' }, 404, cors);
-    const [boatWithCaptains] = await withApprovedCaptainIds(env, [row]);
+    const [boatWithCaptains] = await withBoatPricing(env, await withApprovedCaptainIds(env, [row]));
     return json(outBoat(boatWithCaptains), 200, cors);
   }
   if (request.method === 'PUT') {
@@ -368,9 +368,24 @@ function outBoat(row) {
       focalY: num(row.cover_photo_focal_y, 50),
       zoom: num(row.cover_photo_zoom, 1)
     } : null,
-    approvedCaptainIds: row.approved_captain_ids ? String(row.approved_captain_ids).split(',').filter(Boolean) : []
+    approvedCaptainIds: row.approved_captain_ids ? String(row.approved_captain_ids).split(',').filter(Boolean) : [],
+    pricingPlans: parseJson(row.pricing_plans, []).map(outPricingPlan)
   };
   return { ...boat, ...marketingFields(boat) };
+}
+
+function outPricingPlan(row) {
+  return {
+    id: row.id,
+    boatId: row.boat_id,
+    name: row.plan_name,
+    durationHours: Number(row.duration_hours || 0),
+    baseFee: Number(row.base_fee || 0),
+    cleaningFee: Number(row.cleaning_fee || 0),
+    fuelDeposit: Number(row.fuel_deposit || 0),
+    taxRate: Number(row.tax_rate || 0),
+    active: Boolean(row.active ?? 1)
+  };
 }
 
 async function withApprovedCaptainIds(env, boatRows) {
@@ -389,6 +404,24 @@ async function withApprovedCaptainIds(env, boatRows) {
     if (byBoat.has(row.boat_id)) byBoat.get(row.boat_id).push(row.captain_id);
   }
   return boatRows.map(row => ({ ...row, approved_captain_ids: (byBoat.get(row.id) || []).join(',') }));
+}
+
+async function withBoatPricing(env, boatRows) {
+  if (!boatRows.length) return boatRows;
+  const boatIds = boatRows.map(row => row.id).filter(Boolean);
+  if (!boatIds.length) return boatRows;
+  const placeholders = boatIds.map(() => '?').join(',');
+  const rows = await env.DB.prepare(`
+    SELECT *
+    FROM boat_pricing
+    WHERE active = 1 AND boat_id IN (${placeholders})
+    ORDER BY boat_id ASC, duration_hours ASC, base_fee ASC
+  `).bind(...boatIds).all();
+  const byBoat = new Map(boatIds.map(id => [id, []]));
+  for (const row of rows.results || []) {
+    if (byBoat.has(row.boat_id)) byBoat.get(row.boat_id).push(row);
+  }
+  return boatRows.map(row => ({ ...row, pricing_plans: JSON.stringify(byBoat.get(row.id) || []) }));
 }
 
 async function owners(request, env, cors) {
@@ -914,8 +947,9 @@ async function bookings(request, env, cors, ctx) {
     if (!body.boatId && !body.boat_id) return json({ error: 'boatId is required' }, 400, cors);
     if (!body.customerName && !(body.firstName || body.lastName)) return json({ error: 'Customer name is required' }, 400, cors);
     if (!body.email && !body.phone) return json({ error: 'Email or phone is required' }, 400, cors);
+    const requestedDuration = Number(body.durationHours || body.duration_hours || 4);
     const requestedStartTime = body.startTime || body.start_time || null;
-    if (requestedStartTime && !isPublicBookingStartTime(requestedStartTime)) return json({ error: 'Start time must be between 9:00 AM and 6:00 PM in 30-minute increments.' }, 400, cors);
+    if (requestedStartTime && !isPublicBookingStartTime(requestedStartTime, requestedDuration)) return json({ error: `Start time must be between 9:00 AM and ${publicLatestStartLabel(requestedDuration)} for a ${requestedDuration}-hour charter.` }, 400, cors);
     const bookingId = body.id || `booking_${crypto.randomUUID()}`;
     const names = splitName(body.customerName, body.firstName, body.lastName);
     const customerId = body.customerId || await findExistingCustomerId(env, body) || `customer_${crypto.randomUUID()}`;
@@ -924,10 +958,10 @@ async function bookings(request, env, cors, ctx) {
     const price = await env.DB.prepare(`
       SELECT id, base_fee, cleaning_fee, fuel_deposit, tax_rate
       FROM boat_pricing
-      WHERE boat_id = ? AND active = 1
+      WHERE boat_id = ? AND active = 1 AND duration_hours = ?
       ORDER BY duration_hours
       LIMIT 1
-    `).bind(body.boatId || body.boat_id).first();
+    `).bind(body.boatId || body.boat_id, requestedDuration).first();
 
     await touchBookingCustomerFast(env, customerId, customerBody, names);
 
@@ -947,7 +981,7 @@ async function bookings(request, env, cors, ctx) {
       'unpaid',
       body.charterDate || body.charter_date || null,
       requestedStartTime,
-      Number(body.durationHours || body.duration_hours || 4),
+      requestedDuration,
       Number(price?.base_fee || body.baseFee || 0),
       Number(price?.cleaning_fee || 0),
       Number(price?.fuel_deposit || 0),
@@ -2453,11 +2487,24 @@ function estimatedEndTime(startTime, durationHours) {
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 }
 
-function isPublicBookingStartTime(startTime) {
+function isPublicBookingStartTime(startTime, durationHours = 4) {
   const match = String(startTime || '').match(/^(\d{1,2}):(\d{2})$/);
   if (!match) return false;
   const minutes = Number(match[1]) * 60 + Number(match[2]);
-  return minutes >= 9 * 60 && minutes <= 18 * 60 && minutes % 30 === 0;
+  return minutes >= 9 * 60 && minutes <= publicLatestStartMinutes(durationHours) && minutes % 30 === 0;
+}
+
+function publicLatestStartMinutes(durationHours = 4) {
+  return Math.max(9 * 60, 18 * 60 - Number(durationHours || 4) * 60);
+}
+
+function publicLatestStartLabel(durationHours = 4) {
+  const minutes = publicLatestStartMinutes(durationHours);
+  const hour = Math.floor(minutes / 60);
+  const minute = minutes % 60;
+  const suffix = hour >= 12 ? 'PM' : 'AM';
+  const displayHour = hour % 12 || 12;
+  return `${displayHour}:${String(minute).padStart(2, '0')} ${suffix}`;
 }
 
 function safeJson(value, fallback) {
