@@ -32,6 +32,7 @@ export default {
       if (path.startsWith('/api/v1/availability/')) return await availabilityById(request, env, cors, path.split('/').pop());
       if (path === '/api/v1/bookings') return await bookings(request, env, cors, ctx);
       if (path.match(/^\/api\/v1\/bookings\/[^/]+\/documents$/)) return await bookingDocuments(request, env, cors, path.split('/')[4]);
+      if (path.match(/^\/api\/v1\/bookings\/[^/]+\/payments$/)) return await bookingPayments(request, env, cors, path.split('/')[4]);
       if (path.match(/^\/api\/v1\/bookings\/[^/]+\/settlement$/)) return await bookingSettlement(request, env, cors, path.split('/')[4]);
       if (path.match(/^\/api\/v1\/bookings\/[^/]+\/send-agreement-packet$/)) return await sendAgreementPacket(request, env, cors, path.split('/')[4]);
       if (path.match(/^\/api\/v1\/bookings\/[^/]+\/send-confirmation$/)) return await sendBookingConfirmation(request, env, cors, path.split('/')[4]);
@@ -60,7 +61,7 @@ async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
   const resendConfigured = Boolean(env.RESEND_API_KEY && env.BOOKING_NOTIFY_FROM);
-  return json({ ok: true, service: 'cove-api', version: '0.3.44', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), userAuth: true, bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
+  return json({ ok: true, service: 'cove-api', version: '0.3.45', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), userAuth: true, bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
 }
 
 async function authLogin(request, env, cors) {
@@ -1054,6 +1055,18 @@ async function bookingDocuments(request, env, cors, bookingId) {
   return json({ error: 'GET or POST required' }, 405, cors);
 }
 
+async function bookingPayments(request, env, cors, bookingId) {
+  requireDb(env);
+  const auth = await requireAdmin(request, env);
+  if (auth) return json(auth.body, auth.status, cors);
+  if (request.method !== 'GET') return json({ error: 'GET required' }, 405, cors);
+
+  const booking = await env.DB.prepare('SELECT id FROM bookings WHERE id = ?').bind(bookingId).first();
+  if (!booking) return json({ error: 'Booking not found' }, 404, cors);
+  const rows = await env.DB.prepare('SELECT * FROM payments WHERE booking_id = ? ORDER BY created_at DESC').bind(bookingId).all();
+  return json((rows.results || []).map(outPayment), 200, cors);
+}
+
 async function bookingSettlement(request, env, cors, bookingId) {
   requireDb(env);
   const auth = await requireAdmin(request, env);
@@ -1355,6 +1368,32 @@ function outAccountingRecord(row) {
     status: row.status,
     source: row.source,
     sortOrder: row.sort_order,
+    metadata: parseJson(row.metadata_json, {}),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function outPayment(row) {
+  return {
+    id: row.id,
+    bookingId: row.booking_id,
+    settlementId: row.settlement_id,
+    payerType: row.payer_type,
+    payerId: row.payer_id,
+    payeeType: row.payee_type,
+    payeeId: row.payee_id,
+    amount: row.amount,
+    status: row.status,
+    method: row.method,
+    externalReference: row.external_reference,
+    notes: row.notes,
+    provider: row.provider || 'stripe',
+    providerSessionId: row.provider_session_id,
+    providerPaymentIntentId: row.provider_payment_intent_id,
+    purpose: row.purpose || 'custom',
+    currency: row.currency || 'usd',
+    checkoutUrl: row.checkout_url,
     metadata: parseJson(row.metadata_json, {}),
     createdAt: row.created_at,
     updatedAt: row.updated_at
@@ -1876,6 +1915,7 @@ function outBooking(row) {
     captainTripSentAt: row.captain_trip_sent_at,
     documents: [],
     signatures: [],
+    payments: [],
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -1890,8 +1930,10 @@ async function attachBookingDocuments(env, bookings) {
   const tripRows = await env.DB.prepare(`SELECT * FROM trips WHERE booking_id IN (${placeholders})`).bind(...ids).all();
   const settlementRows = await env.DB.prepare(`SELECT * FROM settlements WHERE booking_id IN (${placeholders}) ORDER BY updated_at DESC`).bind(...ids).all();
   const accountingRows = await env.DB.prepare(`SELECT * FROM accounting_records WHERE booking_id IN (${placeholders}) ORDER BY sort_order ASC, created_at ASC`).bind(...ids).all();
+  const paymentRows = await env.DB.prepare(`SELECT * FROM payments WHERE booking_id IN (${placeholders}) ORDER BY created_at DESC`).bind(...ids).all();
   const byBooking = new Map(ids.map(id => [id, []]));
   const signaturesByBooking = new Map(ids.map(id => [id, []]));
+  const paymentsByBooking = new Map(ids.map(id => [id, []]));
   const tripsByBooking = new Map();
   const settlementsByBooking = new Map();
   const accountingByBooking = new Map(ids.map(id => [id, []]));
@@ -1900,6 +1942,9 @@ async function attachBookingDocuments(env, bookings) {
   }
   for (const row of sigRows.results || []) {
     signaturesByBooking.get(row.booking_id)?.push(outBookingSignature(row));
+  }
+  for (const row of paymentRows.results || []) {
+    paymentsByBooking.get(row.booking_id)?.push(outPayment(row));
   }
   for (const row of tripRows.results || []) {
     tripsByBooking.set(row.booking_id, outTrip(row));
@@ -1912,7 +1957,7 @@ async function attachBookingDocuments(env, bookings) {
     if (!latestSettlement || row.settlement_id !== latestSettlement.id) continue;
     accountingByBooking.get(row.booking_id)?.push(outAccountingRecord(row));
   }
-  return bookings.map(booking => ({ ...booking, documents: byBooking.get(booking.id) || [], signatures: signaturesByBooking.get(booking.id) || [], trip: tripsByBooking.get(booking.id) || null, settlement: settlementsByBooking.get(booking.id) || null, accountingRecords: accountingByBooking.get(booking.id) || [] }));
+  return bookings.map(booking => ({ ...booking, documents: byBooking.get(booking.id) || [], signatures: signaturesByBooking.get(booking.id) || [], payments: paymentsByBooking.get(booking.id) || [], trip: tripsByBooking.get(booking.id) || null, settlement: settlementsByBooking.get(booking.id) || null, accountingRecords: accountingByBooking.get(booking.id) || [] }));
 }
 
 function outBookingDocument(row) {
