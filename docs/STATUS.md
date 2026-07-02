@@ -192,11 +192,40 @@ Completed so far:
 
 ## Current Roadmap
 
-1. Add a cleaner captain-facing trip view / future captain app foundation.
-2. Turn the agreement packet workflow into real document/e-sign storage.
-3. Back office settlement workflow.
-4. Payments.
-5. SEO and public polish.
+### Next recommended work block
+
+Stripe test-mode Checkout plus webhook plumbing is the highest-leverage next step. The database and admin display foundation are now ready, so payments can be added without redesigning the booking detail surface.
+
+### Priority sequence
+
+1. Stripe test-mode integration
+   - Add `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` as Worker secrets.
+   - Add Checkout Session creation for booking deposits and final invoices.
+   - Add Stripe webhook handling to update `payments`, booking paid status, settlement/customer paid status, and office notes.
+   - Keep all payment work in Stripe test mode first.
+
+2. Payment UX in Booking Details
+   - Add clear back-office actions such as `Send Payment Link` and `Create Final Invoice Checkout`.
+   - Show payment status, checkout URL, Stripe session/payment reference, amount, and purpose in the existing Payments panel.
+   - Make it obvious whether the customer has paid, needs a payment link, or needs back-office review.
+
+3. Tighten booking lifecycle
+   - Make booking status drive the next primary CTA consistently.
+   - Suggested lifecycle: `requested` -> confirm/send packet -> waiting on signature/payment -> ready for trip -> completed/settlement/final invoice -> closed.
+   - Keep `cancelled` as a reason-required terminal state and make archived/locked behavior explicit later.
+
+4. Captain closeout polish
+   - Add optional file/photo attachments from the captain closeout form.
+   - Show a cleaner back-office review state for captain-submitted closeout values.
+   - Notify back office when a captain submits closeout details.
+
+5. MVP hardening
+   - Put admin fully behind login.
+   - Add basic audit logging for sensitive booking, signing, payment, and settlement actions.
+   - Consolidate `docs/STATUS.md`, `docs/TODO.md`, and business rules into a current MVP operating guide.
+
+6. SEO and public polish
+   - Continue adding metadata, page titles/descriptions, structured content, and public UX polish as the MVP workflow stabilizes.
 
 Parked idea: mobile sticky `Book This Boat` CTA on public boat detail pages. A version that appeared after the hero CTA and hid over the request form was shelved because it did not match the desired flow; revisit if the boat detail page layout changes.
 
