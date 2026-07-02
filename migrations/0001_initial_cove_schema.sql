@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS boats (
   bathrooms INTEGER DEFAULT 0,
   make TEXT,
   model TEXT,
+  model_year INTEGER,
   boat_type TEXT,
   short_description TEXT,
   source_listing_url TEXT,

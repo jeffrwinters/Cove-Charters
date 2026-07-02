@@ -63,7 +63,7 @@ async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
   const resendConfigured = Boolean(env.RESEND_API_KEY && env.BOOKING_NOTIFY_FROM);
-  return json({ ok: true, service: 'cove-api', version: '0.3.50', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), userAuth: true, bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null, stripe: Boolean(env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET) }, 200, cors);
+  return json({ ok: true, service: 'cove-api', version: '0.3.51', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), userAuth: true, bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null, stripe: Boolean(env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET) }, 200, cors);
 }
 
 async function authLogin(request, env, cors) {
@@ -288,9 +288,9 @@ async function upsertBoat(env, boat) {
   await env.DB.prepare(`
     INSERT OR REPLACE INTO boats (
       id, owner_id, slug, name, status, lifecycle_status, booking_enabled, featured,
-      home_port, length_ft, capacity, bedrooms, bathrooms, make, model, boat_type,
+      home_port, length_ft, capacity, bedrooms, bathrooms, make, model, model_year, boat_type,
       short_description, source_listing_url, sort_order, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
   `).bind(
     boat.id,
     boat.ownerId || null,
@@ -307,6 +307,7 @@ async function upsertBoat(env, boat) {
     boat.bathrooms || 0,
     boat.make || null,
     boat.model || null,
+    Number(boat.modelYear ?? boat.model_year) || null,
     boat.type || null,
     boat.shortDescription || null,
     boat.sourceListingUrl || null,
@@ -384,6 +385,7 @@ function outBoat(row) {
     bathrooms: row.bathrooms,
     make: row.make,
     model: row.model,
+    modelYear: row.model_year,
     type: row.boat_type,
     shortDescription: row.short_description,
     sourceListingUrl: row.source_listing_url,
