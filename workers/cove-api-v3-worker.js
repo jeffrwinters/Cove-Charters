@@ -63,7 +63,7 @@ async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
   const resendConfigured = Boolean(env.RESEND_API_KEY && env.BOOKING_NOTIFY_FROM);
-  return json({ ok: true, service: 'cove-api', version: '0.3.47', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), userAuth: true, bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null, stripe: Boolean(env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET) }, 200, cors);
+  return json({ ok: true, service: 'cove-api', version: '0.3.48', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), userAuth: true, bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null, stripe: Boolean(env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET) }, 200, cors);
 }
 
 async function authLogin(request, env, cors) {
@@ -774,6 +774,15 @@ function splitBookingNotes(body) {
 
 function isGeneratedAvailabilityNote(value) {
   return /^(Customer saw (likely open availability|availability warning) for |Availability check unavailable:)/.test(String(value || '').trim());
+}
+
+function visibleCustomerNotes(value) {
+  return String(value || '')
+    .split(/\n{1,}/)
+    .map(part => part.trim())
+    .filter(Boolean)
+    .filter(part => !isGeneratedAvailabilityNote(part))
+    .join('\n') || null;
 }
 
 function outCustomer(row) {
@@ -2170,7 +2179,7 @@ function outBooking(row) {
     customerName: [row.first_name, row.last_name].filter(Boolean).join(' ').trim(),
     email: row.email,
     phone: row.phone,
-    customerNotes: row.customer_notes,
+    customerNotes: visibleCustomerNotes(row.customer_notes),
     boatId: row.boat_id,
     boatName: row.boat_name,
     boatSlug: row.boat_slug,
