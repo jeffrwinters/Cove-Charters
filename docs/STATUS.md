@@ -40,8 +40,10 @@ The current API version is `0.3.41` after adding the first real back-office user
 - Back-office users can sign in through `POST /api/v1/auth/login`; sessions are stored as hashed tokens in `admin_sessions`.
 - Protected admin writes now accept either a signed-in user session bearer token or the legacy bootstrap `ADMIN_TOKEN` bearer token.
 - `login.html` is the standalone admin sign-in page. It uses `logo.png` when present and falls back to text branding if the file is unavailable.
+- Follow-up needed: put `admin.html` fully behind the login/session gate so unauthenticated visitors redirect to `login.html`.
 - The admin page has a Users tab for creating/editing/deactivating back-office users. Passwords are required for new users and optional when editing existing users.
 - Customer booking/signing remains token-based and does not require customer accounts for MVP.
+- Captain-facing trip packet and signed agreement access should also remain token-based and should not require captain authentication for MVP. Captains should be able to open their assigned trip/agreement links without creating or signing into an account.
 
 ### Media Slice
 
@@ -124,7 +126,7 @@ Completed so far:
 - Booking emails use Resend REST API when `RESEND_API_KEY` and `BOOKING_NOTIFY_FROM` are configured.
 - Admin confirmed/completed bookings with an assigned captain include Copy Captain Packet and Send Captain Packet. The send action calls `POST /api/v1/bookings/{id}/send-captain-packet`, requires the assigned captain to have an email address, and attaches signed booking documents / configured bareboat template URLs when available.
 - Admin confirmed/completed bookings with an assigned captain include Copy Captain Link. The protected link generator calls `POST /api/v1/bookings/{id}/captain-trip-link` and creates a tokenized `captain-trip.html?token=...` view.
-- Captain trip links load a captain-facing trip packet through `GET /api/v1/captain-trips/{token}` with trip details, customer contact, notes, and captain-visible documents. This is the MVP foundation for the future captain app.
+- Captain trip links load a captain-facing trip packet through `GET /api/v1/captain-trips/{token}` with trip details, customer contact, notes, and captain-visible documents. This is the MVP foundation for the future captain app, but these links should remain tokenized/no-login access unless the product explicitly revisits that decision.
 - Captain trip links now include a token-scoped availability calendar. Captains can create and delete their own unavailable blocks through `POST /api/v1/captain-trips/{token}/availability` and `DELETE /api/v1/captain-trips/{token}/availability/{id}` without receiving admin access.
 - Current MVP email sender uses the temporary `lakefrontatloto.com` domain. Revisit this configuration after Cove controls `covecharters.com`; likely target is `BOOKING_NOTIFY_FROM=bookings@covecharters.com` with replies routed to the back-office inbox.
 - Agreement handling is intentionally post-confirmation: customer booking requests stay lightweight, then back office sends a guided document packet and attaches signed documents to the booking for office/captain access.

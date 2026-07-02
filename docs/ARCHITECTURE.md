@@ -66,6 +66,8 @@ Current core endpoints:
 
 Public reads can remain public where appropriate. Admin writes accept `Authorization: Bearer <session_token>` for signed-in back-office users. The legacy `ADMIN_TOKEN` bearer value remains a bootstrap/fallback path for creating the first user and emergency access.
 
+Back-office admin pages should eventually be gated behind the standalone login/session flow. Do not require captain authentication for tokenized captain trip packets, signed agreement access, or customer signing links; those flows are intentionally low-friction, token-scoped access paths for MVP operations.
+
 ## Database
 
 Cloudflare D1 is the source of truth.
@@ -89,8 +91,12 @@ Pages currently include:
 - `index.html` public homepage
 - `boat.html` public boat detail
 - `admin.html` operations/admin interface
+- `login.html` Cove Command Center login
+- `sign.html` tokenized customer agreement signing
+- `signed.html` tokenized signed agreement record
+- `captain-trip.html` tokenized captain trip packet
 
-The admin interface stores the entered admin token in browser local storage and sends it as a bearer token for protected writes.
+The admin interface supports signed-in user sessions and still supports the bootstrap admin token fallback for protected writes. `admin.html` still needs a front-door login guard so unauthenticated visitors are redirected to `login.html`.
 
 ## Design Principle
 
