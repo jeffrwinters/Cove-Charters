@@ -1,4 +1,4 @@
-name = "cove-api"
+name = "cove-charters"
 main = "workers/cove-api-v3-worker.js"
 compatibility_date = "2024-12-18"
 
