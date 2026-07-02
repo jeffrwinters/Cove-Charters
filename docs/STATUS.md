@@ -18,7 +18,7 @@ The active Worker file is:
 workers/cove-api-v3-worker.js
 ```
 
-The current API version is `0.3.41` after adding the first real back-office user/session management foundation.
+The current API version is `0.3.42` after gating the Command Center behind signed-in sessions and limiting user management to admin-role accounts.
 
 ## Working End To End
 
@@ -40,7 +40,9 @@ The current API version is `0.3.41` after adding the first real back-office user
 - Back-office users can sign in through `POST /api/v1/auth/login`; sessions are stored as hashed tokens in `admin_sessions`.
 - Protected admin writes now accept either a signed-in user session bearer token or the legacy bootstrap `ADMIN_TOKEN` bearer token.
 - `login.html` is the standalone admin sign-in page. It uses `logo.png` when present and falls back to text branding if the file is unavailable.
-- Follow-up needed: put `admin.html` fully behind the login/session gate so unauthenticated visitors redirect to `login.html`.
+- `admin.html` is guarded by the login/session flow. Visitors without a saved session redirect to `login.html`, and expired/revoked sessions are validated before admin data loads.
+- The Command Center currently admits `admin` and `staff` users. User management and API Debug navigation are shown only to `admin` users.
+- The Users API now requires an admin-role session or the legacy bootstrap `ADMIN_TOKEN`; staff sessions cannot manage users.
 - The admin page has a Users tab for creating/editing/deactivating back-office users. Passwords are required for new users and optional when editing existing users.
 - Customer booking/signing remains token-based and does not require customer accounts for MVP.
 - Captain-facing trip packet and signed agreement access should also remain token-based and should not require captain authentication for MVP. Captains should be able to open their assigned trip/agreement links without creating or signing into an account.

@@ -59,7 +59,7 @@ async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
   const resendConfigured = Boolean(env.RESEND_API_KEY && env.BOOKING_NOTIFY_FROM);
-  return json({ ok: true, service: 'cove-api', version: '0.3.41', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), userAuth: true, bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
+  return json({ ok: true, service: 'cove-api', version: '0.3.42', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), userAuth: true, bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
 }
 
 async function authLogin(request, env, cors) {
@@ -107,7 +107,7 @@ async function authMe(request, env, cors) {
 
 async function adminUsers(request, env, cors) {
   requireDb(env);
-  const auth = await requireAdmin(request, env);
+  const auth = await requireAdminRole(request, env);
   if (auth) return json(auth.body, auth.status, cors);
   if (request.method === 'GET') {
     const rows = await env.DB.prepare('SELECT * FROM admin_users ORDER BY status ASC, name ASC, email ASC').all();
@@ -134,7 +134,7 @@ async function adminUsers(request, env, cors) {
 
 async function adminUserById(request, env, cors, id) {
   requireDb(env);
-  const auth = await requireAdmin(request, env);
+  const auth = await requireAdminRole(request, env);
   if (auth) return json(auth.body, auth.status, cors);
   const current = await env.DB.prepare('SELECT * FROM admin_users WHERE id = ?').bind(id).first();
   if (!current) return json({ error: 'User not found' }, 404, cors);
@@ -2568,6 +2568,14 @@ async function requireAdmin(request, env) {
   if (await hasLegacyAdminToken(request, env)) return null;
   if (await sessionUser(request, env)) return null;
   return { status: 401, body: { error: 'Admin authorization required' } };
+}
+
+async function requireAdminRole(request, env) {
+  if (await hasLegacyAdminToken(request, env)) return null;
+  const user = await sessionUser(request, env);
+  if (!user) return { status: 401, body: { error: 'Admin authorization required' } };
+  if (String(user.role || '').toLowerCase() !== 'admin') return { status: 403, body: { error: 'Admin role required' } };
+  return null;
 }
 
 async function hasLegacyAdminToken(request, env) {

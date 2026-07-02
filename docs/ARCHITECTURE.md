@@ -66,7 +66,7 @@ Current core endpoints:
 
 Public reads can remain public where appropriate. Admin writes accept `Authorization: Bearer <session_token>` for signed-in back-office users. The legacy `ADMIN_TOKEN` bearer value remains a bootstrap/fallback path for creating the first user and emergency access.
 
-Back-office admin pages should eventually be gated behind the standalone login/session flow. Do not require captain authentication for tokenized captain trip packets, signed agreement access, or customer signing links; those flows are intentionally low-friction, token-scoped access paths for MVP operations.
+Back-office admin pages are gated behind the standalone login/session flow. Do not require captain authentication for tokenized captain trip packets, signed agreement access, or customer signing links; those flows are intentionally low-friction, token-scoped access paths for MVP operations.
 
 ## Database
 
@@ -96,7 +96,7 @@ Pages currently include:
 - `signed.html` tokenized signed agreement record
 - `captain-trip.html` tokenized captain trip packet
 
-The admin interface supports signed-in user sessions and still supports the bootstrap admin token fallback for protected writes. `admin.html` still needs a front-door login guard so unauthenticated visitors are redirected to `login.html`.
+The admin interface supports signed-in user sessions and still supports the bootstrap admin token fallback for protected writes. `admin.html` redirects visitors without a saved session to `login.html` and validates the session before loading admin data. The Command Center admits `admin` and `staff` users; user management requires an `admin` role or the bootstrap token.
 
 ## Design Principle
 

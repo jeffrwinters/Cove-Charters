@@ -30,17 +30,19 @@
     </section>
     <div class="utility">
       <span>Cove Charters Back Office</span>
-      <a href="admin.html">Bootstrap setup</a>
+      <a href="index.html">Public site</a>
     </div>
   </main>
   <script>
     const DEFAULT_API='https://cove-api.jeff-r-winters.workers.dev';
     const api=()=>localStorage.getItem('cove_api_base')||DEFAULT_API;
     const next=()=>new URLSearchParams(location.search).get('next')||'admin.html';
+    const loginError=()=>new URLSearchParams(location.search).get('error')||'';
     const sessionToken=()=>localStorage.getItem('cove_session_token')||'';
     const setStatus=(message,tone='')=>{status.textContent=message;status.className=`status ${tone}`;};
     async function checkExistingSession(){if(!sessionToken())return;try{const r=await fetch(`${api()}/api/v1/auth/me`,{headers:{Authorization:`Bearer ${sessionToken()}`},cache:'no-store'});if(r.ok){location.href=next();return;}localStorage.removeItem('cove_session_token');}catch{localStorage.removeItem('cove_session_token');}}
     loginForm.addEventListener('submit',async event=>{event.preventDefault();submit.disabled=true;submit.textContent='Signing in...';setStatus('Checking credentials...');try{const r=await fetch(`${api()}/api/v1/auth/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email.value,password:password.value})});const data=await r.json();if(!r.ok)throw new Error(data.error||'Sign in failed');localStorage.setItem('cove_session_token',data.token);setStatus('Signed in. Opening admin...','good');location.href=next();}catch(error){setStatus(error.message||'Sign in failed','bad');submit.disabled=false;submit.textContent='Sign In';}});
+    if(loginError()==='command-center-access')setStatus('That account does not have Cove Command Center access.','bad');
     checkExistingSession();
   </script>
 </body>

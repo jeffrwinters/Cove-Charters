@@ -4,6 +4,18 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Cove Admin | Command Center</title>
+  <script>
+    (() => {
+      try {
+        if (!localStorage.getItem('cove_session_token')) {
+          const next = `admin.html${location.search || ''}${location.hash || ''}`;
+          location.replace(`login.html?next=${encodeURIComponent(next)}`);
+        }
+      } catch {
+        location.replace('login.html?next=admin.html');
+      }
+    })();
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
@@ -13,9 +25,9 @@
   <link rel="stylesheet" href="assets/admin.css">
 </head>
 <body>
-  <div class="mobile-menu"><button class="active" data-tab="dashboard">Dashboard</button><button data-tab="boats">Boats</button><button data-tab="captains">Captains</button><button data-tab="owners">Owners</button><button data-tab="customers">Customers</button><button data-tab="bookings">Bookings <span id="mobileBookingCount"></span></button><button data-tab="users">Users</button><button data-tab="reporting">Reporting</button><a href="index.html">Public Site</a><button class="sign-out-link" type="button" data-sign-out>Sign Out</button></div>
+  <div class="mobile-menu"><button class="active" data-tab="dashboard">Dashboard</button><button data-tab="boats">Boats</button><button data-tab="captains">Captains</button><button data-tab="owners">Owners</button><button data-tab="customers">Customers</button><button data-tab="bookings">Bookings <span id="mobileBookingCount"></span></button><button data-tab="users" data-admin-only>Users</button><button data-tab="reporting">Reporting</button><a href="index.html">Public Site</a><button class="sign-out-link" type="button" data-sign-out>Sign Out</button></div>
   <div class="app">
-    <aside><a class="brand" href="index.html">Cove Admin</a><p class="note">Command Center reads live D1 data and uses protected user sessions for writes. The admin token remains available for bootstrap access.</p><div class="nav"><button class="active" data-tab="dashboard">Command Center</button><button data-tab="boats">Boats</button><button data-tab="captains">Captains</button><button data-tab="owners">Owners</button><button data-tab="customers">Customers</button><button data-tab="bookings">Bookings <span class="nav-count hidden" id="bookingNavCount">0</span></button><button data-tab="users">Users</button><button data-tab="reporting">Reporting</button><button data-tab="json">API Debug</button></div><div class="aside-actions"><button class="back sign-out-link" type="button" data-sign-out>Sign Out</button><a class="back" href="index.html">Back to public site</a></div></aside>
+    <aside><a class="brand" href="index.html">Cove Admin</a><p class="note">Command Center reads live D1 data and uses protected user sessions for writes. The admin token remains available for bootstrap access.</p><div class="nav"><button class="active" data-tab="dashboard">Command Center</button><button data-tab="boats">Boats</button><button data-tab="captains">Captains</button><button data-tab="owners">Owners</button><button data-tab="customers">Customers</button><button data-tab="bookings">Bookings <span class="nav-count hidden" id="bookingNavCount">0</span></button><button data-tab="users" data-admin-only>Users</button><button data-tab="reporting">Reporting</button><button data-tab="json" data-admin-only>API Debug</button></div><div class="aside-actions"><button class="back sign-out-link" type="button" data-sign-out>Sign Out</button><a class="back" href="index.html">Back to public site</a></div></aside>
     <main>
       <datalist id="halfHourTimes"></datalist>
       <section class="tab active" id="dashboard"><section class="page-head"><h1>Command Center</h1><p>Back-office view of booking lifecycle, follow-up work, and near-term charter operations.</p></section><section class="stats"><div class="stat alert"><span>New Requests</span><strong id="statNewBookings">0</strong></div><div class="stat"><span>Total Requests</span><strong id="statBookings">0</strong></div><div class="stat"><span>Reviewing</span><strong id="statReviewingBookings">0</strong></div><div class="stat"><span>Confirmed</span><strong id="statConfirmedBookings">0</strong></div><div class="stat"><span>Boats</span><strong id="statBoats">0</strong></div></section><div class="panel"><div class="panel-head"><div class="toolbar"><h2>Booking Lifecycle</h2><span class="muted">Click any card to open the booking record</span></div></div><div class="panel-body"><div class="kanban-board" id="bookingKanban"></div></div></div></section>
