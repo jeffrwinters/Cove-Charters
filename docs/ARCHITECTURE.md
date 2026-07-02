@@ -56,6 +56,7 @@ Current core endpoints:
 - `POST /api/v1/bookings/{id}/send-captain-packet`
 - `POST /api/v1/bookings/{id}/captain-trip-link`
 - `GET /api/v1/captain-trips/{token}`
+- `POST /api/v1/captain-trips/{token}/closeout`
 - `GET /api/v1/captain-trips/{token}/availability`
 - `POST /api/v1/captain-trips/{token}/availability`
 - `DELETE /api/v1/captain-trips/{token}/availability/{id}`

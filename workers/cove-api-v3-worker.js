@@ -41,6 +41,7 @@ export default {
       if (path.startsWith('/api/v1/bookings/')) return await bookingById(request, env, cors, path.split('/').pop());
       if (path.match(/^\/api\/v1\/signing\/[^/]+\/record$/)) return await signingRecord(request, env, cors, path.split('/')[4]);
       if (path.match(/^\/api\/v1\/signing\/[^/]+$/)) return await signingPacket(request, env, cors, path.split('/').pop());
+      if (path.match(/^\/api\/v1\/captain-trips\/[^/]+\/closeout$/)) return await captainTripCloseout(request, env, cors, path.split('/')[4]);
       if (path.match(/^\/api\/v1\/captain-trips\/[^/]+\/availability$/)) return await captainTripAvailability(request, env, cors, path.split('/')[4]);
       if (path.match(/^\/api\/v1\/captain-trips\/[^/]+\/availability\/[^/]+$/)) return await captainTripAvailabilityById(request, env, cors, path.split('/')[4], path.split('/')[6]);
       if (path.match(/^\/api\/v1\/captain-trips\/[^/]+$/)) return await captainTripPacket(request, env, cors, path.split('/').pop());
@@ -59,7 +60,7 @@ async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
   const resendConfigured = Boolean(env.RESEND_API_KEY && env.BOOKING_NOTIFY_FROM);
-  return json({ ok: true, service: 'cove-api', version: '0.3.43', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), userAuth: true, bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
+  return json({ ok: true, service: 'cove-api', version: '0.3.44', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), userAuth: true, bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
 }
 
 async function authLogin(request, env, cors) {
@@ -1382,6 +1383,17 @@ async function signingPacket(request, env, cors, token) {
     const requiredIds = agreementSections().map(section => section.id);
     const missing = requiredIds.filter(id => !accepted.some(item => item.id === id && item.accepted));
     if (missing.length) return json({ error: `Missing acceptance for: ${missing.join(', ')}` }, 400, cors);
+    const finalDetails = normalizeFinalTripDetails(body.finalDetails || body);
+    if (!finalDetails.guestCount) return json({ error: 'Total guest count is required' }, 400, cors);
+    if (!finalDetails.pickupLocation) return json({ error: 'Preferred pickup location is required' }, 400, cors);
+    const acceptedWithDetails = accepted.concat([{
+      id: 'final_trip_details',
+      title: 'Final trip details',
+      accepted: true,
+      initials: body.finalDetailsInitials || accepted[accepted.length - 1]?.initials || '',
+      guestCount: finalDetails.guestCount,
+      pickupLocation: finalDetails.pickupLocation
+    }]);
 
     const signatureId = `sig_${crypto.randomUUID()}`;
     await env.DB.prepare(`
@@ -1394,16 +1406,19 @@ async function signingPacket(request, env, cors, token) {
       body.signerEmail || booking.email || null,
       body.signerIp || null,
       body.userAgent || null,
-      JSON.stringify(accepted),
+      JSON.stringify(acceptedWithDetails),
       body.signatureText
     ).run();
 
+    const finalDetailsNote = `[${new Date().toLocaleString('en-US', { timeZone: 'America/Chicago' })}] Customer signing details: ${finalDetails.guestCount} guest(s); pickup location: ${finalDetails.pickupLocation}.`;
     await env.DB.prepare(`
       UPDATE bookings
       SET agreement_status = 'signed', agreement_signed_at = COALESCE(agreement_signed_at, CURRENT_TIMESTAMP),
-        signing_completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+        signing_completed_at = CURRENT_TIMESTAMP,
+        office_notes = ?,
+        updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).bind(booking.id).run();
+    `).bind([booking.officeNotes, finalDetailsNote].filter(Boolean).join('\n'), booking.id).run();
 
     const summaryUrl = signedRecordUrl(env, token);
     await env.DB.prepare(`
@@ -1422,7 +1437,7 @@ async function signingPacket(request, env, cors, token) {
     ).run();
 
     const captainTrip = booking.captainId ? await ensureCaptainTripLink(env, booking) : null;
-    await sendSignedAgreementNotice(env, { ...booking, captainTripUrl: captainTrip?.url || booking.captainTripUrl, signatureId, signerName: body.signerName, signerEmail: body.signerEmail || booking.email || null, signedRecordUrl: summaryUrl }).catch(error => {
+    await sendSignedAgreementNotice(env, { ...booking, finalDetails, captainTripUrl: captainTrip?.url || booking.captainTripUrl, signatureId, signerName: body.signerName, signerEmail: body.signerEmail || booking.email || null, signedRecordUrl: summaryUrl }).catch(error => {
       console.warn('Signed agreement notice failed', error?.message || error);
     });
 
@@ -1560,6 +1575,89 @@ async function captainTripPacket(request, env, cors, token) {
   return json(captainTripPayload(booking), 200, cors);
 }
 
+async function captainTripCloseout(request, env, cors, token) {
+  requireDb(env);
+  const booking = await captainTripBooking(env, token);
+  if (booking.error) return json({ error: booking.error }, booking.status, cors);
+  if (request.method !== 'POST') return json({ error: 'POST required' }, 405, cors);
+  if (!['confirmed', 'completed'].includes(booking.status)) return json({ error: 'Trip closeout is available after the booking is confirmed' }, 400, cors);
+
+  const body = await request.json();
+  const actualHours = num(body.actualHours ?? body.actual_hours ?? booking.durationHours, 0);
+  const milesTraveled = num(body.milesTraveled ?? body.miles_traveled ?? body.billableMiles ?? body.billable_miles, 0);
+  if (actualHours <= 0) return json({ error: 'Actual hours must be greater than zero' }, 400, cors);
+  if (milesTraveled < 0) return json({ error: 'Miles traveled cannot be negative' }, 400, cors);
+
+  const currentTrip = await env.DB.prepare('SELECT * FROM trips WHERE booking_id = ?').bind(booking.id).first();
+  const tripId = currentTrip?.id || `trip_${crypto.randomUUID()}`;
+  const mileageRate = num(currentTrip?.mileage_rate ?? booking.mileageRate ?? await setting(env, 'mileage_rate', 14), 14);
+  const mileageCharge = roundMoney(milesTraveled * mileageRate);
+  const damageReported = truthy(body.damageReported ?? body.damage_reported) ? 1 : 0;
+  const cleaningNeeded = truthy(body.cleaningNeeded ?? body.cleaning_needed);
+  const fuelNotes = String(body.fuelNotes ?? body.fuel_notes ?? '').trim();
+  const cleaningNotes = String(body.cleaningNotes ?? body.cleaning_notes ?? '').trim();
+  const captainNotes = String(body.captainNotes ?? body.captain_notes ?? '').trim();
+  const damageNotes = String(body.damageNotes ?? body.damage_notes ?? '').trim();
+  const submittedNote = [
+    `Captain closeout submitted ${new Date().toLocaleString('en-US', { timeZone: 'America/Chicago' })}.`,
+    `Actual hours: ${actualHours}.`,
+    `Miles traveled: ${milesTraveled}.`,
+    cleaningNeeded ? 'Cleaning needed: yes.' : 'Cleaning needed: no.',
+    fuelNotes ? `Fuel notes: ${fuelNotes}` : '',
+    cleaningNotes ? `Cleaning notes: ${cleaningNotes}` : ''
+  ].filter(Boolean).join(' ');
+
+  if (currentTrip) {
+    await env.DB.prepare(`
+      UPDATE trips
+      SET status = CASE WHEN status = 'closed' THEN status ELSE 'captain_submitted' END,
+        actual_hours = ?, billable_miles = ?, mileage_rate = ?, mileage_charge = ?,
+        damage_reported = ?, damage_notes = ?, captain_notes = ?, office_notes = ?,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).bind(
+      actualHours,
+      milesTraveled,
+      mileageRate,
+      mileageCharge,
+      damageReported,
+      damageNotes || currentTrip.damage_notes || null,
+      captainNotes || currentTrip.captain_notes || null,
+      [currentTrip.office_notes, submittedNote].filter(Boolean).join('\n'),
+      tripId
+    ).run();
+  } else {
+    await env.DB.prepare(`
+      INSERT INTO trips (
+        id, booking_id, status, actual_hours, billable_miles, mileage_rate, mileage_charge,
+        damage_reported, damage_notes, captain_notes, office_notes, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    `).bind(
+      tripId,
+      booking.id,
+      'captain_submitted',
+      actualHours,
+      milesTraveled,
+      mileageRate,
+      mileageCharge,
+      damageReported,
+      damageNotes || null,
+      captainNotes || null,
+      submittedNote
+    ).run();
+  }
+
+  const officeNote = `[${new Date().toLocaleString('en-US', { timeZone: 'America/Chicago' })}] Captain closeout submitted. Actual hours: ${actualHours}; miles traveled: ${milesTraveled}.`;
+  await env.DB.prepare(`
+    UPDATE bookings
+    SET office_notes = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).bind([booking.officeNotes, officeNote].filter(Boolean).join('\n'), booking.id).run();
+
+  const trip = await env.DB.prepare('SELECT * FROM trips WHERE id = ?').bind(tripId).first();
+  return json({ ok: true, trip: outTrip(trip) }, 200, cors);
+}
+
 async function captainTripAvailability(request, env, cors, token) {
   requireDb(env);
   const booking = await captainTripBooking(env, token);
@@ -1659,6 +1757,7 @@ async function ensureCaptainTripLink(env, booking) {
 }
 
 function captainTripPayload(booking) {
+  const latestSignature = (booking.signatures || [])[0] || null;
   return {
     booking: {
       id: booking.id,
@@ -1678,8 +1777,10 @@ function captainTripPayload(booking) {
       customerEmail: booking.email,
       customerNotes: booking.customerNotes,
       officeNotes: booking.officeNotes,
+      finalDetails: latestSignature?.finalDetails || null,
       signedAt: booking.agreementSignedAt,
-      captainTripUrl: booking.captainTripUrl
+      captainTripUrl: booking.captainTripUrl,
+      trip: booking.trip || null
     },
     documents: (booking.documents || [])
       .filter(doc => doc.url)
@@ -1831,15 +1932,30 @@ function outBookingDocument(row) {
 }
 
 function outBookingSignature(row) {
+  const accepted = safeJson(row.accepted_json, []);
   return {
     id: row.id,
     bookingId: row.booking_id,
     signerName: row.signer_name,
     signerEmail: row.signer_email,
-    accepted: safeJson(row.accepted_json, []),
+    accepted,
+    finalDetails: finalTripDetailsFromAccepted(accepted),
     signatureText: row.signature_text,
     signedAt: row.signed_at
   };
+}
+
+function normalizeFinalTripDetails(input = {}) {
+  const rawGuestCount = input.guestCount ?? input.guest_count ?? input.totalGuests ?? input.total_guests;
+  const guestCount = Math.max(0, Math.round(num(rawGuestCount, 0)));
+  const pickupLocation = String(input.pickupLocation ?? input.pickup_location ?? input.preferredPickupLocation ?? input.preferred_pickup_location ?? '').trim();
+  return { guestCount, pickupLocation };
+}
+
+function finalTripDetailsFromAccepted(accepted = []) {
+  const details = (Array.isArray(accepted) ? accepted : []).find(item => item && item.id === 'final_trip_details') || {};
+  const normalized = normalizeFinalTripDetails(details);
+  return normalized.guestCount || normalized.pickupLocation ? normalized : null;
 }
 
 function publicSigningBooking(booking) {
@@ -2103,6 +2219,8 @@ async function sendCustomerAgreementPacket(env, booking) {
 async function sendCaptainTripPacket(env, booking) {
   const subject = `Cove captain packet: ${booking.boatName || booking.boatId} on ${booking.charterDate || 'date TBD'}`;
   const lines = captainPacketLines(booking);
+  const finalDetails = booking.finalDetails || booking.signatures?.[0]?.finalDetails || null;
+  const finalDetailsHtml = finalDetails ? `<p><strong>Total guests:</strong> ${escapeHtml(finalDetails.guestCount || 'Not provided')}<br><strong>Preferred pickup:</strong> ${escapeHtml(finalDetails.pickupLocation || 'Not provided')}</p>` : '';
   const html = `
     <h2>Cove captain trip packet</h2>
     <p>Hi ${escapeHtml(booking.captainName || 'Captain')},</p>
@@ -2111,6 +2229,7 @@ async function sendCaptainTripPacket(env, booking) {
     <p><strong>Boat:</strong> ${escapeHtml(booking.boatName || booking.boatId)}<br><strong>Date:</strong> ${escapeHtml(booking.charterDate || 'TBD')}<br><strong>Start:</strong> ${escapeHtml(booking.startTime || 'TBD')}<br><strong>Duration:</strong> ${escapeHtml(booking.durationHours || 'TBD')} hours</p>
     <h3>Customer</h3>
     <p>${escapeHtml(booking.customerName || 'Guest')}<br>${escapeHtml(booking.phone || 'No phone')}<br>${escapeHtml(booking.email || 'No email')}</p>
+    ${finalDetailsHtml}
     <h3>Notes</h3>
     <p>${escapeHtml(booking.customerNotes || 'None')}</p>
     <p>Back office will send updates if agreement, payment, weather, or schedule details change.</p>
@@ -2157,6 +2276,7 @@ async function sendSignedAgreementNotice(env, booking) {
   ].filter(Boolean);
   if (!recipients.length) return null;
   const subject = `Cove confirmed booking ready: ${booking.boatName || booking.boatId} on ${booking.charterDate || 'date TBD'}`;
+  const finalDetails = booking.finalDetails || null;
   const lines = [
     `Cove confirmed booking notice`,
     ``,
@@ -2169,6 +2289,8 @@ async function sendSignedAgreementNotice(env, booking) {
     `Captain: ${booking.captainName || 'Captain TBD'}`,
     `Date/time: ${booking.charterDate || 'TBD'} ${booking.startTime || ''}`,
     `Duration: ${booking.durationHours || 'TBD'} hours`,
+    finalDetails ? `Total guests: ${finalDetails.guestCount || 'Not provided'}` : '',
+    finalDetails ? `Preferred pickup: ${finalDetails.pickupLocation || 'Not provided'}` : '',
     ``,
     `Signed record: ${booking.signedRecordUrl}`,
     booking.captainTripUrl ? `Captain trip view: ${booking.captainTripUrl}` : '',
@@ -2179,6 +2301,7 @@ async function sendSignedAgreementNotice(env, booking) {
     <p>This Cove charter is confirmed, and ${escapeHtml(booking.signerName || booking.customerName || 'the customer')} has completed the required charter documents.</p>
     <p>Please review the booking details and signed record before the trip.</p>
     <p><strong>Booking:</strong> ${escapeHtml(booking.id)}<br><strong>Boat:</strong> ${escapeHtml(booking.boatName || booking.boatId)}<br><strong>Captain:</strong> ${escapeHtml(booking.captainName || 'Captain TBD')}<br><strong>Date:</strong> ${escapeHtml(booking.charterDate || 'TBD')} ${escapeHtml(booking.startTime || '')}</p>
+    ${finalDetails ? `<p><strong>Total guests:</strong> ${escapeHtml(finalDetails.guestCount || 'Not provided')}<br><strong>Preferred pickup:</strong> ${escapeHtml(finalDetails.pickupLocation || 'Not provided')}</p>` : ''}
     ${booking.captainTripUrl ? `<p><a href="${escapeHtml(booking.captainTripUrl)}">Open captain trip view</a></p>` : ''}
     <p><a href="${escapeHtml(booking.signedRecordUrl)}">Open the signed record in Cove Admin</a></p>
   `;
@@ -2247,6 +2370,7 @@ function agreementPacketLines(booking) {
 }
 
 function captainPacketLines(booking) {
+  const finalDetails = booking.finalDetails || booking.signatures?.[0]?.finalDetails || null;
   return [
     `Hi ${booking.captainName || 'Captain'},`,
     ``,
@@ -2262,12 +2386,14 @@ function captainPacketLines(booking) {
     `Customer: ${booking.customerName || 'Guest'}`,
     `Customer phone: ${booking.phone || 'Not provided'}`,
     `Customer email: ${booking.email || 'Not provided'}`,
+    finalDetails ? `Total guests: ${finalDetails.guestCount || 'Not provided'}` : '',
+    finalDetails ? `Preferred pickup: ${finalDetails.pickupLocation || 'Not provided'}` : '',
     ``,
     `Customer notes: ${booking.customerNotes || 'None'}`,
     `Office notes: ${booking.officeNotes || 'None'}`,
     ``,
     `Back office will send updates if agreement, payment, weather, or schedule details change.`
-  ];
+  ].filter(line => line !== '');
 }
 
 function customerInvoiceLines(booking, calculation) {
