@@ -124,7 +124,8 @@ Completed so far:
 - Confirmed/completed admin booking cards include MVP trip closeout controls for actual hours, miles traveled, payment status, additional charge line items, and closeout notes. Complete Trip stamps office notes, marks the booking completed, and copies a settlement summary.
 - Admin booking cards now include an MVP settlement calculator for post-charter fuel charge and payout review.
 - Settlement calculator saves trip closeout and draft settlement records to D1 through `PUT /api/v1/bookings/{id}/settlement`.
-- Settlement saves generate structured `accounting_records` rows for customer charges, fuel-deposit credit, captain payout, owner payout, and Cove commission. Admin booking detail displays the saved rows under the settlement calculator.
+- Settlement saves generate structured `accounting_records` rows for customer charges, fuel-deposit credit, captain payout, owner payout, and Cove commission. Admin booking detail displays the saved rows in a collapsed Accounting records disclosure under the settlement calculator.
+- Admin includes a Reporting tab for settlement/accounting summary totals, grouped totals, and row-level accounting records.
 - Settlement math now follows the reviewed `Charges and Payout.xlsx` workbook; a formula-preserving CSV copy is stored at `docs/Charges and Payout.csv`.
 - Current settlement rules: captain pay is actual hours times the captain hourly rate; owner/Cove split the charter fee after captain pay; sales tax is calculated on charter fee plus cleaning fee; total collected includes charter fee, cleaning, tax, fuel deposit, fuel charge, and additional charge line items; fuel deposit refund is reduced by fuel charge and additional charges.
 - Admin now includes a basic Owners manager. Boats can be assigned to an owner from the Boat editor dropdown or from the Owner manager's owned-boats checklist.
