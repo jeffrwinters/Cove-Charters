@@ -63,6 +63,8 @@ Current core endpoints:
 - `GET /api/v1/bookings/{id}/documents`
 - `POST /api/v1/bookings/{id}/documents`
 - `GET /api/v1/bookings/{id}/payments`
+- `POST /api/v1/bookings/{id}/payments/checkout`
+- `POST /api/v1/stripe/webhook`
 - `GET /api/v1/signing/{token}`
 - `POST /api/v1/signing/{token}`
 

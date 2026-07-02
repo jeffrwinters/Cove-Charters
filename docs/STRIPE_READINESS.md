@@ -2,7 +2,7 @@
 
 Date: 2026-07-02
 
-This is a preparation note for adding Stripe payments after the Cove MVP booking, signing, captain packet, closeout, and reporting foundation.
+This is the implementation/setup note for Stripe test-mode payments after the Cove MVP booking, signing, captain packet, closeout, and reporting foundation.
 
 ## Recommended First Stripe Slice
 
@@ -28,21 +28,38 @@ Optional later:
 - `STRIPE_PRICE_CHARTER_DEPOSIT`
 - `STRIPE_ACCOUNT_COUNTRY`
 
-## Proposed API Endpoints
+## Implemented API Endpoints
 
 Admin-authenticated:
 
 - `POST /api/v1/bookings/{id}/payments/checkout`
   - Creates a Stripe Checkout Session for a booking charge.
-  - Payload should include `purpose`: `deposit`, `final_invoice`, or `custom`.
-  - Payload should include a server-calculated or admin-approved amount in cents.
+  - Payload includes `purpose`: `deposit`, `final_invoice`, or `custom`.
+  - Payload includes an admin-approved amount in cents or dollars.
+  - Stores the Checkout URL and Stripe session ID in `payments`.
 
 Public webhook:
 
 - `POST /api/v1/stripe/webhook`
   - Verifies the Stripe signature with `STRIPE_WEBHOOK_SECRET`.
-  - Records successful payment status back to the booking/settlement.
+  - Records successful or expired Checkout status back to `payments`.
+  - Updates booking/settlement customer payment status after successful payment.
   - Appends an office note with the Stripe session/payment reference.
+
+## Sandbox Setup Checklist
+
+1. In Stripe, make sure the Dashboard is in test mode.
+2. Copy the test secret key that starts with `sk_test_`.
+3. Set the Worker secret:
+   - `npx wrangler secret put STRIPE_SECRET_KEY --name cove-api`
+4. In Stripe, create a webhook endpoint:
+   - Endpoint URL: `https://cove-api.jeff-r-winters.workers.dev/api/v1/stripe/webhook`
+   - Events: `checkout.session.completed`, `checkout.session.expired`
+5. Copy the endpoint signing secret that starts with `whsec_`.
+6. Set the Worker secret:
+   - `npx wrangler secret put STRIPE_WEBHOOK_SECRET --name cove-api`
+7. Confirm `/api/v1/health` shows `"stripe": true`.
+8. In Booking Details, use `Create Payment Link` on a confirmed booking, open the generated Stripe Checkout URL, and pay with a Stripe test card.
 
 ## Suggested Data Model
 

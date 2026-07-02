@@ -31,7 +31,9 @@ export default {
       if (path === '/api/v1/availability') return await availability(request, env, cors);
       if (path.startsWith('/api/v1/availability/')) return await availabilityById(request, env, cors, path.split('/').pop());
       if (path === '/api/v1/bookings') return await bookings(request, env, cors, ctx);
+      if (path === '/api/v1/stripe/webhook') return await stripeWebhook(request, env, cors);
       if (path.match(/^\/api\/v1\/bookings\/[^/]+\/documents$/)) return await bookingDocuments(request, env, cors, path.split('/')[4]);
+      if (path.match(/^\/api\/v1\/bookings\/[^/]+\/payments\/checkout$/)) return await bookingPaymentCheckout(request, env, cors, path.split('/')[4]);
       if (path.match(/^\/api\/v1\/bookings\/[^/]+\/payments$/)) return await bookingPayments(request, env, cors, path.split('/')[4]);
       if (path.match(/^\/api\/v1\/bookings\/[^/]+\/settlement$/)) return await bookingSettlement(request, env, cors, path.split('/')[4]);
       if (path.match(/^\/api\/v1\/bookings\/[^/]+\/send-agreement-packet$/)) return await sendAgreementPacket(request, env, cors, path.split('/')[4]);
@@ -61,7 +63,7 @@ async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
   const resendConfigured = Boolean(env.RESEND_API_KEY && env.BOOKING_NOTIFY_FROM);
-  return json({ ok: true, service: 'cove-api', version: '0.3.45', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), userAuth: true, bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
+  return json({ ok: true, service: 'cove-api', version: '0.3.46', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), userAuth: true, bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null, stripe: Boolean(env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET) }, 200, cors);
 }
 
 async function authLogin(request, env, cors) {
@@ -1067,6 +1069,101 @@ async function bookingPayments(request, env, cors, bookingId) {
   return json((rows.results || []).map(outPayment), 200, cors);
 }
 
+async function bookingPaymentCheckout(request, env, cors, bookingId) {
+  requireDb(env);
+  const auth = await requireAdmin(request, env);
+  if (auth) return json(auth.body, auth.status, cors);
+  if (request.method !== 'POST') return json({ error: 'POST required' }, 405, cors);
+  if (!env.STRIPE_SECRET_KEY) {
+    return json({ ok: false, configured: false, provider: 'stripe', error: 'Stripe secret key is not configured' }, 501, cors);
+  }
+
+  const row = await env.DB.prepare(bookingSelectSql('WHERE bk.id = ?')).bind(bookingId).first();
+  if (!row) return json({ error: 'Booking not found' }, 404, cors);
+  const booking = outBooking(row);
+  const body = await request.json().catch(() => ({}));
+  const amountCents = stripeAmountCents(body);
+  if (!amountCents || amountCents < 50) return json({ error: 'Payment amount must be at least $0.50' }, 400, cors);
+
+  const purpose = stripePurpose(body.purpose);
+  const paymentId = `payment_${crypto.randomUUID()}`;
+  const description = String(body.description || stripePaymentDescription(booking, purpose)).slice(0, 500);
+  const session = await createStripeCheckoutSession(env, {
+    booking,
+    paymentId,
+    purpose,
+    amountCents,
+    description
+  });
+  const latestSettlement = await env.DB.prepare('SELECT id FROM settlements WHERE booking_id = ? ORDER BY updated_at DESC LIMIT 1').bind(bookingId).first();
+  const metadata = {
+    bookingId,
+    paymentId,
+    purpose,
+    amountCents,
+    stripeMode: stripeKeyMode(env.STRIPE_SECRET_KEY)
+  };
+
+  await env.DB.prepare(`
+    INSERT INTO payments (
+      id, booking_id, settlement_id, payer_type, payer_id, payee_type, payee_id,
+      amount, status, method, external_reference, notes, provider, provider_session_id,
+      purpose, currency, checkout_url, metadata_json, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+  `).bind(
+    paymentId,
+    bookingId,
+    latestSettlement?.id || null,
+    'customer',
+    booking.customerId || null,
+    'cove',
+    null,
+    amountCents / 100,
+    'checkout_created',
+    'checkout',
+    session.id,
+    description,
+    'stripe',
+    session.id,
+    purpose,
+    String(session.currency || 'usd').toLowerCase(),
+    session.url,
+    JSON.stringify(metadata)
+  ).run();
+
+  const note = `[${new Date().toLocaleString('en-US', { timeZone: 'America/Chicago' })}] Stripe checkout created for ${moneyText(amountCents / 100)} (${purpose.replaceAll('_', ' ')}). Session: ${session.id}`;
+  await env.DB.prepare('UPDATE bookings SET office_notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').bind([booking.officeNotes, note].filter(Boolean).join('\n'), bookingId).run();
+
+  const payment = await env.DB.prepare('SELECT * FROM payments WHERE id = ?').bind(paymentId).first();
+  return json({ ok: true, provider: 'stripe', checkoutUrl: session.url, stripeSessionId: session.id, payment: outPayment(payment) }, 201, cors);
+}
+
+async function stripeWebhook(request, env, cors) {
+  requireDb(env);
+  if (request.method !== 'POST') return json({ error: 'POST required' }, 405, cors);
+  if (!env.STRIPE_WEBHOOK_SECRET) return json({ ok: false, configured: false, provider: 'stripe', error: 'Stripe webhook secret is not configured' }, 501, cors);
+
+  const rawBody = await request.text();
+  const signatureHeader = request.headers.get('stripe-signature') || '';
+  const verified = await verifyStripeSignature(rawBody, signatureHeader, env.STRIPE_WEBHOOK_SECRET);
+  if (!verified.ok) return json({ error: verified.error || 'Invalid Stripe signature' }, 400, cors);
+
+  let event;
+  try {
+    event = JSON.parse(rawBody);
+  } catch {
+    return json({ error: 'Invalid Stripe event payload' }, 400, cors);
+  }
+
+  if (event.type === 'checkout.session.completed') {
+    await recordStripeCheckoutCompleted(env, event.data?.object || {});
+  } else if (event.type === 'checkout.session.expired') {
+    await recordStripeCheckoutExpired(env, event.data?.object || {});
+  }
+
+  return json({ received: true }, 200, cors);
+}
+
 async function bookingSettlement(request, env, cors, bookingId) {
   requireDb(env);
   const auth = await requireAdmin(request, env);
@@ -1860,6 +1957,169 @@ async function sendFinalInvoice(request, env, cors, id) {
   `).bind([booking.officeNotes, note].filter(Boolean).join('\n'), id).run();
 
   return json({ ok: true, sent: true, result, calculation }, 200, cors);
+}
+
+function stripeAmountCents(body) {
+  const rawCents = body.amountCents ?? body.amount_cents;
+  if (rawCents !== undefined && rawCents !== null && rawCents !== '') return Math.round(num(rawCents, 0));
+  const rawDollars = body.amount ?? body.amountDollars ?? body.amount_dollars;
+  if (rawDollars !== undefined && rawDollars !== null && rawDollars !== '') return Math.round(num(rawDollars, 0) * 100);
+  return 0;
+}
+
+function stripePurpose(value) {
+  const purpose = String(value || 'custom').toLowerCase().replace(/[^a-z_]+/g, '_');
+  return ['deposit', 'final_invoice', 'custom'].includes(purpose) ? purpose : 'custom';
+}
+
+function stripePaymentDescription(booking, purpose) {
+  const label = purpose === 'final_invoice' ? 'Final invoice' : purpose === 'deposit' ? 'Booking deposit' : 'Booking payment';
+  return `${label}: ${booking.boatName || booking.boatId || 'Cove charter'} ${booking.charterDate || ''} ${booking.startTime || ''}`.trim();
+}
+
+function stripeKeyMode(key) {
+  return String(key || '').startsWith('sk_live_') ? 'live' : 'test';
+}
+
+function stripeSuccessUrl(env) {
+  return env.STRIPE_SUCCESS_URL || `${publicSiteUrl(env)}/admin.html?payment=success&session_id={CHECKOUT_SESSION_ID}`;
+}
+
+function stripeCancelUrl(env) {
+  return env.STRIPE_CANCEL_URL || `${publicSiteUrl(env)}/admin.html?payment=cancelled`;
+}
+
+async function createStripeCheckoutSession(env, options) {
+  const { booking, paymentId, purpose, amountCents, description } = options;
+  const params = new URLSearchParams();
+  params.set('mode', 'payment');
+  params.set('success_url', stripeSuccessUrl(env));
+  params.set('cancel_url', stripeCancelUrl(env));
+  params.set('client_reference_id', booking.id);
+  params.set('line_items[0][quantity]', '1');
+  params.set('line_items[0][price_data][currency]', 'usd');
+  params.set('line_items[0][price_data][unit_amount]', String(amountCents));
+  params.set('line_items[0][price_data][product_data][name]', 'Cove Charters');
+  params.set('line_items[0][price_data][product_data][description]', description);
+  params.set('metadata[booking_id]', booking.id);
+  params.set('metadata[payment_id]', paymentId);
+  params.set('metadata[purpose]', purpose);
+  if (booking.email) params.set('customer_email', booking.email);
+
+  const response = await fetch('https://api.stripe.com/v1/checkout/sessions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Basic ${btoa(`${env.STRIPE_SECRET_KEY}:`)}`,
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body: params.toString()
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = data?.error?.message || `Stripe Checkout failed with ${response.status}`;
+    throw new Error(message);
+  }
+  if (!data.url || !data.id) throw new Error('Stripe did not return a Checkout URL');
+  return data;
+}
+
+async function verifyStripeSignature(rawBody, header, secret) {
+  const parts = Object.fromEntries(String(header || '').split(',').map(part => {
+    const [key, ...rest] = part.split('=');
+    return [key, rest.join('=')];
+  }).filter(([key, value]) => key && value));
+  const timestamp = parts.t;
+  const signature = parts.v1;
+  if (!timestamp || !signature) return { ok: false, error: 'Missing Stripe signature' };
+  const ageSeconds = Math.abs(Math.floor(Date.now() / 1000) - Number(timestamp));
+  if (!Number.isFinite(ageSeconds) || ageSeconds > 300) return { ok: false, error: 'Stripe signature timestamp is outside tolerance' };
+
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const digest = await crypto.subtle.sign('HMAC', key, encoder.encode(`${timestamp}.${rawBody}`));
+  const expected = bytesToHex(new Uint8Array(digest));
+  return { ok: constantTimeEqual(expected, signature) };
+}
+
+async function recordStripeCheckoutCompleted(env, session) {
+  const paymentId = session.metadata?.payment_id || null;
+  const bookingId = session.metadata?.booking_id || session.client_reference_id || null;
+  if (!bookingId) return;
+  const purpose = stripePurpose(session.metadata?.purpose);
+  const amount = num(session.amount_total, 0) / 100;
+  const sessionId = session.id || null;
+  const existing = paymentId
+    ? await env.DB.prepare('SELECT * FROM payments WHERE id = ?').bind(paymentId).first()
+    : sessionId ? await env.DB.prepare('SELECT * FROM payments WHERE provider = ? AND provider_session_id = ?').bind('stripe', sessionId).first() : null;
+  const id = existing?.id || paymentId || `payment_${crypto.randomUUID()}`;
+  const latestSettlement = await env.DB.prepare('SELECT id FROM settlements WHERE booking_id = ? ORDER BY updated_at DESC LIMIT 1').bind(bookingId).first();
+  const metadata = {
+    stripeEvent: 'checkout.session.completed',
+    stripeCustomer: session.customer || null,
+    paymentStatus: session.payment_status || null,
+    rawAmountTotal: session.amount_total || null
+  };
+
+  await env.DB.prepare(`
+    INSERT OR REPLACE INTO payments (
+      id, booking_id, settlement_id, payer_type, payer_id, payee_type, payee_id,
+      amount, status, method, external_reference, notes, provider, provider_session_id,
+      provider_payment_intent_id, purpose, currency, checkout_url, metadata_json,
+      created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM payments WHERE id = ?), CURRENT_TIMESTAMP), CURRENT_TIMESTAMP)
+  `).bind(
+    id,
+    bookingId,
+    existing?.settlement_id || latestSettlement?.id || null,
+    existing?.payer_type || 'customer',
+    existing?.payer_id || null,
+    existing?.payee_type || 'cove',
+    existing?.payee_id || null,
+    amount,
+    'paid',
+    'checkout',
+    sessionId,
+    existing?.notes || stripePaymentDescription({ id: bookingId }, purpose),
+    'stripe',
+    sessionId,
+    session.payment_intent || null,
+    purpose,
+    String(session.currency || 'usd').toLowerCase(),
+    session.url || existing?.checkout_url || null,
+    JSON.stringify({ ...parseJson(existing?.metadata_json, {}), ...metadata }),
+    id
+  ).run();
+
+  const paidStatus = stripePaidStatus(purpose);
+  const booking = await env.DB.prepare('SELECT office_notes FROM bookings WHERE id = ?').bind(bookingId).first();
+  const note = `[${new Date().toLocaleString('en-US', { timeZone: 'America/Chicago' })}] Stripe payment received for ${moneyText(amount)} (${purpose.replaceAll('_', ' ')}). Session: ${sessionId || 'unknown'}`;
+  await env.DB.prepare('UPDATE bookings SET paid_status = ?, office_notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+    .bind(paidStatus, [booking?.office_notes, note].filter(Boolean).join('\n'), bookingId)
+    .run();
+  if (latestSettlement?.id) {
+    await env.DB.prepare('UPDATE settlements SET customer_paid_status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').bind(paidStatus, latestSettlement.id).run();
+  }
+}
+
+async function recordStripeCheckoutExpired(env, session) {
+  const paymentId = session.metadata?.payment_id || null;
+  const sessionId = session.id || null;
+  if (!paymentId && !sessionId) return;
+  await env.DB.prepare(`
+    UPDATE payments
+    SET status = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ? OR (provider = ? AND provider_session_id = ?)
+  `).bind('expired', paymentId || '', 'stripe', sessionId || '').run();
+}
+
+function stripePaidStatus(purpose) {
+  if (purpose === 'deposit') return 'deposit paid';
+  if (purpose === 'final_invoice') return 'paid in full';
+  return 'needs review';
+}
+
+function bytesToHex(bytes) {
+  return [...bytes].map(byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
 function bookingSelectSql(suffix = '') {
