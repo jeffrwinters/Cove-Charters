@@ -50,7 +50,7 @@ async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
   const resendConfigured = Boolean(env.RESEND_API_KEY && env.BOOKING_NOTIFY_FROM);
-  return json({ ok: true, service: 'cove-api', version: '0.3.37', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
+  return json({ ok: true, service: 'cove-api', version: '0.3.38', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
 }
 
 async function settings(request, env, cors) {
@@ -936,7 +936,8 @@ async function bookingSettlement(request, env, cors, bookingId) {
     const trip = await env.DB.prepare('SELECT * FROM trips WHERE booking_id = ?').bind(bookingId).first();
     const settlement = await env.DB.prepare('SELECT * FROM settlements WHERE booking_id = ? ORDER BY updated_at DESC LIMIT 1').bind(bookingId).first();
     const calculation = await calculateSettlement(env, bookingRow, trip || {}, settlement || {});
-    return json({ booking, trip: trip ? outTrip(trip) : null, settlement: settlement ? outSettlement(settlement) : null, calculation }, 200, cors);
+    const accountingRecords = settlement ? await accountingRecordsForSettlement(env, settlement.id) : [];
+    return json({ booking, trip: trip ? outTrip(trip) : null, settlement: settlement ? outSettlement(settlement) : null, accountingRecords, calculation }, 200, cors);
   }
 
   if (request.method === 'PUT') {
@@ -1008,6 +1009,9 @@ async function bookingSettlement(request, env, cors, bookingId) {
       body.notes || currentSettlement?.notes || null
     ).run();
 
+    const postedAccounting = closeTrip || currentTrip?.status === 'closed' || bookingRow.status === 'completed';
+    await replaceSettlementAccountingRecords(env, { bookingId, tripId, settlementId, bookingRow, calculation, posted: postedAccounting });
+
     if (closeTrip) {
       await env.DB.prepare('UPDATE bookings SET status = ?, paid_status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
         .bind('completed', body.customerPaidStatus || body.customer_paid_status || bookingRow.paid_status || 'unsettled', bookingId)
@@ -1016,7 +1020,8 @@ async function bookingSettlement(request, env, cors, bookingId) {
 
     const trip = await env.DB.prepare('SELECT * FROM trips WHERE id = ?').bind(tripId).first();
     const settlement = await env.DB.prepare('SELECT * FROM settlements WHERE id = ?').bind(settlementId).first();
-    return json({ ok: true, trip: outTrip(trip), settlement: outSettlement(settlement), calculation }, 200, cors);
+    const accountingRecords = await accountingRecordsForSettlement(env, settlementId);
+    return json({ ok: true, trip: outTrip(trip), settlement: outSettlement(settlement), accountingRecords, calculation }, 200, cors);
   }
 
   return json({ error: 'GET or PUT required' }, 405, cors);
@@ -1064,6 +1069,88 @@ function normalizeAdditionalItems(items) {
   return (Array.isArray(items) ? items : [])
     .map(item => ({ description: String(item.description || item.label || '').trim(), amount: roundMoney(num(item.amount, 0)) }))
     .filter(item => item.description || item.amount);
+}
+
+async function replaceSettlementAccountingRecords(env, { bookingId, tripId, settlementId, bookingRow, calculation, posted = false }) {
+  await env.DB.prepare('DELETE FROM accounting_records WHERE settlement_id = ? AND source = ?').bind(settlementId, 'settlement_calculation').run();
+  const owner = await env.DB.prepare(`
+    SELECT b.owner_id
+    FROM bookings bk
+    LEFT JOIN boats b ON b.id = bk.boat_id
+    WHERE bk.id = ?
+  `).bind(bookingId).first();
+  const records = settlementAccountingRecords({ bookingId, tripId, settlementId, bookingRow, ownerId: owner?.owner_id || null, calculation, posted });
+  if (!records.length) return [];
+  await env.DB.batch(records.map(record => env.DB.prepare(`
+    INSERT INTO accounting_records (
+      id, booking_id, trip_id, settlement_id, party_type, party_id, direction, category,
+      label, amount, currency, status, source, sort_order, metadata_json, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+  `).bind(
+    record.id,
+    record.bookingId,
+    record.tripId,
+    record.settlementId,
+    record.partyType,
+    record.partyId,
+    record.direction,
+    record.category,
+    record.label,
+    record.amount,
+    record.currency,
+    record.status,
+    record.source,
+    record.sortOrder,
+    record.metadataJson
+  )));
+  return records;
+}
+
+function settlementAccountingRecords({ bookingId, tripId, settlementId, bookingRow, ownerId, calculation, posted = false }) {
+  const status = posted ? 'posted' : 'draft';
+  const customerId = bookingRow.customer_id || null;
+  const captainId = bookingRow.captain_id || null;
+  const rows = [];
+  const add = (partyType, partyId, direction, category, label, amount, metadata = {}) => {
+    const cleanAmount = roundMoney(num(amount, 0));
+    if (!cleanAmount && category !== 'charter_fee') return;
+    const sortOrder = rows.length + 1;
+    rows.push({
+      id: `acct_${settlementId}_${String(sortOrder).padStart(2, '0')}_${category.replace(/[^a-z0-9_]+/gi, '_')}`,
+      bookingId,
+      tripId,
+      settlementId,
+      partyType,
+      partyId,
+      direction,
+      category,
+      label,
+      amount: cleanAmount,
+      currency: 'USD',
+      status,
+      source: 'settlement_calculation',
+      sortOrder,
+      metadataJson: JSON.stringify(metadata)
+    });
+  };
+
+  add('customer', customerId, 'debit', 'charter_fee', 'Charter fee', calculation.baseFee);
+  add('customer', customerId, 'debit', 'cleaning_fee', 'Cleaning fee', calculation.cleaningFee);
+  add('customer', customerId, 'debit', 'sales_tax', 'Sales tax', calculation.taxCollected);
+  add('customer', customerId, 'debit', 'fuel_charge', `Fuel charge (${calculation.milesTraveled || 0} miles)`, calculation.mileageCharge, { milesTraveled: calculation.milesTraveled, mileageRate: calculation.mileageRate });
+  for (const [index, item] of (calculation.additionalChargeItems || []).entries()) {
+    add('customer', customerId, 'debit', `additional_charge_${index + 1}`, item.description || 'Additional charge', item.amount, { description: item.description || '', sourceIndex: index });
+  }
+  add('customer', customerId, 'credit', 'fuel_deposit_refund', 'Fuel deposit refund / credit', calculation.fuelDepositRefund, { fuelDeposit: calculation.fuelDeposit });
+  add('captain', captainId, 'credit', 'captain_payout', 'Captain pay', calculation.captainPay, { actualHours: calculation.actualHours, captainHourlyRate: calculation.captainHourlyRate });
+  add('owner', ownerId, 'credit', 'owner_payout', 'Owner payout', calculation.ownerPayout, { ownerSplit: calculation.ownerSplit });
+  add('cove', 'cove', 'credit', 'cove_commission', 'Cove commission', calculation.coveCommission, { coveSplit: calculation.coveSplit });
+  return rows;
+}
+
+async function accountingRecordsForSettlement(env, settlementId) {
+  const rows = await env.DB.prepare('SELECT * FROM accounting_records WHERE settlement_id = ? ORDER BY sort_order ASC, created_at ASC').bind(settlementId).all();
+  return (rows.results || []).map(outAccountingRecord);
 }
 
 function outTrip(row) {
@@ -1116,6 +1203,28 @@ function outSettlement(row) {
     customerPaidStatus: row.customer_paid_status,
     officeStatus: row.office_status,
     notes: row.notes,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function outAccountingRecord(row) {
+  return {
+    id: row.id,
+    bookingId: row.booking_id,
+    tripId: row.trip_id,
+    settlementId: row.settlement_id,
+    partyType: row.party_type,
+    partyId: row.party_id,
+    direction: row.direction,
+    category: row.category,
+    label: row.label,
+    amount: row.amount,
+    currency: row.currency || 'USD',
+    status: row.status,
+    source: row.source,
+    sortOrder: row.sort_order,
+    metadata: parseJson(row.metadata_json, {}),
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -1386,10 +1495,12 @@ async function attachBookingDocuments(env, bookings) {
   const sigRows = await env.DB.prepare(`SELECT * FROM booking_signatures WHERE booking_id IN (${placeholders}) ORDER BY signed_at DESC`).bind(...ids).all();
   const tripRows = await env.DB.prepare(`SELECT * FROM trips WHERE booking_id IN (${placeholders})`).bind(...ids).all();
   const settlementRows = await env.DB.prepare(`SELECT * FROM settlements WHERE booking_id IN (${placeholders}) ORDER BY updated_at DESC`).bind(...ids).all();
+  const accountingRows = await env.DB.prepare(`SELECT * FROM accounting_records WHERE booking_id IN (${placeholders}) ORDER BY sort_order ASC, created_at ASC`).bind(...ids).all();
   const byBooking = new Map(ids.map(id => [id, []]));
   const signaturesByBooking = new Map(ids.map(id => [id, []]));
   const tripsByBooking = new Map();
   const settlementsByBooking = new Map();
+  const accountingByBooking = new Map(ids.map(id => [id, []]));
   for (const row of rows.results || []) {
     byBooking.get(row.booking_id)?.push(outBookingDocument(row));
   }
@@ -1402,7 +1513,12 @@ async function attachBookingDocuments(env, bookings) {
   for (const row of settlementRows.results || []) {
     if (!settlementsByBooking.has(row.booking_id)) settlementsByBooking.set(row.booking_id, outSettlement(row));
   }
-  return bookings.map(booking => ({ ...booking, documents: byBooking.get(booking.id) || [], signatures: signaturesByBooking.get(booking.id) || [], trip: tripsByBooking.get(booking.id) || null, settlement: settlementsByBooking.get(booking.id) || null }));
+  for (const row of accountingRows.results || []) {
+    const latestSettlement = settlementsByBooking.get(row.booking_id);
+    if (!latestSettlement || row.settlement_id !== latestSettlement.id) continue;
+    accountingByBooking.get(row.booking_id)?.push(outAccountingRecord(row));
+  }
+  return bookings.map(booking => ({ ...booking, documents: byBooking.get(booking.id) || [], signatures: signaturesByBooking.get(booking.id) || [], trip: tripsByBooking.get(booking.id) || null, settlement: settlementsByBooking.get(booking.id) || null, accountingRecords: accountingByBooking.get(booking.id) || [] }));
 }
 
 function outBookingDocument(row) {
@@ -2192,6 +2308,7 @@ function json(value, status = 200, headers = {}) { return new Response(JSON.stri
 function num(value, fallback = 0) { const n = Number(value); return Number.isFinite(n) ? n : fallback; }
 function nullableNum(value) { const n = Number(value); return value === null || value === undefined || value === '' || !Number.isFinite(n) ? null : n; }
 function roundMoney(value) { return Math.round(num(value, 0) * 100) / 100; }
+function parseJson(value, fallback = null) { try { return value ? JSON.parse(value) : fallback; } catch { return fallback; } }
 function cleanSegment(value) { return String(value).toLowerCase().replace(/[^a-z0-9-_]+/g, '-').replace(/^-+|-+$/g, '') || 'item'; }
 function cleanFilename(value) { const parts = String(value).split('.'); const ext = parts.length > 1 ? parts.pop().toLowerCase().replace(/[^a-z0-9]/g, '') : 'bin'; return `${cleanSegment(parts.join('.') || 'upload')}.${ext}`; }
 function normalizeEntityType(value) { const clean = cleanSegment(value); return clean.endsWith('s') ? clean.slice(0, -1) : clean; }

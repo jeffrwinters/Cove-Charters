@@ -18,7 +18,7 @@ The active Worker file is:
 workers/cove-api-v3-worker.js
 ```
 
-The current API version is `0.3.37` after adding required cancellation reasons for confirmed bookings.
+The current API version is `0.3.38` after adding structured accounting records for settlement closeout.
 
 ## Working End To End
 
@@ -124,6 +124,7 @@ Completed so far:
 - Confirmed/completed admin booking cards include MVP trip closeout controls for actual hours, miles traveled, payment status, additional charge line items, and closeout notes. Complete Trip stamps office notes, marks the booking completed, and copies a settlement summary.
 - Admin booking cards now include an MVP settlement calculator for post-charter fuel charge and payout review.
 - Settlement calculator saves trip closeout and draft settlement records to D1 through `PUT /api/v1/bookings/{id}/settlement`.
+- Settlement saves generate structured `accounting_records` rows for customer charges, fuel-deposit credit, captain payout, owner payout, and Cove commission. Admin booking detail displays the saved rows under the settlement calculator.
 - Settlement math now follows the reviewed `Charges and Payout.xlsx` workbook; a formula-preserving CSV copy is stored at `docs/Charges and Payout.csv`.
 - Current settlement rules: captain pay is actual hours times the captain hourly rate; owner/Cove split the charter fee after captain pay; sales tax is calculated on charter fee plus cleaning fee; total collected includes charter fee, cleaning, tax, fuel deposit, fuel charge, and additional charge line items; fuel deposit refund is reduced by fuel charge and additional charges.
 - Admin now includes a basic Owners manager. Boats can be assigned to an owner from the Boat editor dropdown or from the Owner manager's owned-boats checklist.
@@ -178,10 +179,9 @@ Completed so far:
 
 1. Add a cleaner captain-facing trip view / future captain app foundation.
 2. Turn the agreement packet workflow into real document/e-sign storage.
-3. Turn closeout/settlement notes into structured accounting records.
-4. Back office settlement workflow.
-5. Payments.
-6. SEO and public polish.
+3. Back office settlement workflow.
+4. Payments.
+5. SEO and public polish.
 
 Parked idea: mobile sticky `Book This Boat` CTA on public boat detail pages. A version that appeared after the hero CTA and hid over the request form was shelved because it did not match the desired flow; revisit if the boat detail page layout changes.
 

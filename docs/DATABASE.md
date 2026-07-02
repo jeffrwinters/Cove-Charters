@@ -141,6 +141,25 @@ Financial settlement record for owner, captain, Cove, and customer adjustments.
 
 Additional charge line items are stored in `additional_charges_json`; `additional_charges` remains the summed amount for reporting and compatibility.
 
+### accounting_records
+
+Structured ledger-style rows generated from the latest settlement calculation.
+
+Important fields:
+
+- `booking_id`
+- `trip_id`
+- `settlement_id`
+- `party_type` / `party_id`
+- `direction`
+- `category`
+- `label`
+- `amount`
+- `status`
+- `metadata_json`
+
+Settlement saves regenerate the `settlement_calculation` rows for the current settlement so closeout edits stay aligned with customer charges, customer credits, captain payout, owner payout, and Cove commission.
+
 ### media
 
 Generic media table used by boats and captains.

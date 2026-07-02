@@ -115,3 +115,5 @@ Source: `docs/Charges and Payout.csv`, exported from the `Charges and Payout.xls
 - Fuel deposit refund = fuel deposit - fuel charge - additional charges, floored at zero.
 
 Fuel charge and additional charge adjustments are operational closeout fields; they are not visible in the reviewed spreadsheet sections, but remain supported for back-office settlement. Settlement records should remain editable by back office before final payout.
+
+Each settlement save generates structured accounting records from the same calculation snapshot. Current record categories cover customer charges, customer fuel-deposit credit, captain payout, owner payout, and Cove commission. Draft settlement saves create `draft` accounting records; completing a trip posts the regenerated rows as `posted`.
