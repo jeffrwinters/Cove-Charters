@@ -39,6 +39,7 @@ The current API version is `0.3.41` after adding the first real back-office user
 - `/api/v1/health` returns `userAuth: true` when the deployed Worker supports user/session auth.
 - Back-office users can sign in through `POST /api/v1/auth/login`; sessions are stored as hashed tokens in `admin_sessions`.
 - Protected admin writes now accept either a signed-in user session bearer token or the legacy bootstrap `ADMIN_TOKEN` bearer token.
+- `login.html` is the standalone admin sign-in page. It uses `logo.png` when present and falls back to text branding if the file is unavailable.
 - The admin page has a Users tab for creating/editing/deactivating back-office users. Passwords are required for new users and optional when editing existing users.
 - Customer booking/signing remains token-based and does not require customer accounts for MVP.
 

@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cove Admin | Sign In</title>
+  <meta name="description" content="Sign in to the Cove Charters back-office admin." />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    :root{--navy:#071923;--water:#0f6f8f;--sand:#f2dfbd;--bg:#f7f3ea;--ink:#10212b;--muted:#667987;--line:#dbe7eb;--bad:#a43c3c;--good:#1f8a5b;--shadow:0 22px 60px rgba(7,25,35,.14)}*{box-sizing:border-box}body{min-height:100vh;margin:0;font-family:Inter,system-ui,sans-serif;color:var(--ink);background:var(--bg);display:grid;place-items:center;padding:24px}button,input{font:inherit}.login-shell{width:min(440px,100%);display:grid;gap:18px}.brand{text-align:center}.brand img{max-width:210px;max-height:96px;object-fit:contain}.brand-fallback{display:none;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:var(--navy)}.card{background:white;border:1px solid rgba(16,33,43,.08);border-radius:24px;box-shadow:var(--shadow);padding:26px}.card h1{margin:0;font-size:42px;line-height:.95;letter-spacing:-.06em}.card p{margin:10px 0 0;color:var(--muted);line-height:1.5}.form{display:grid;gap:14px;margin-top:22px}label{display:grid;gap:7px;color:#425967;font-size:13px;font-weight:900}input{width:100%;border:1px solid var(--line);border-radius:14px;padding:13px 14px;color:var(--ink);background:white}input:focus{outline:3px solid rgba(15,111,143,.16);border-color:rgba(15,111,143,.5)}.btn{min-height:46px;border:0;border-radius:999px;background:var(--navy);color:white;font-weight:900;cursor:pointer}.btn:disabled{opacity:.6;cursor:not-allowed}.status{min-height:22px;margin:0;color:var(--muted);font-size:13px;font-weight:800}.status.bad{color:var(--bad)}.status.good{color:var(--good)}.utility{display:flex;justify-content:space-between;gap:12px;align-items:center;color:var(--muted);font-size:13px}.utility a{color:var(--water);font-weight:900;text-decoration:none}@media(max-width:560px){body{padding:16px}.card{padding:22px;border-radius:20px}.card h1{font-size:36px}.utility{display:grid}.brand img{max-width:180px}}
+  </style>
+</head>
+<body>
+  <main class="login-shell">
+    <div class="brand">
+      <img src="logo.png" alt="Cove Charters" onerror="this.style.display='none';document.getElementById('brandFallback').style.display='block';">
+      <div class="brand-fallback" id="brandFallback">Cove Charters</div>
+    </div>
+    <section class="card">
+      <h1>Admin sign in</h1>
+      <p>Access Cove back-office tools and booking operations.</p>
+      <form class="form" id="loginForm">
+        <label>Email<input id="email" type="email" autocomplete="username" required></label>
+        <label>Password<input id="password" type="password" autocomplete="current-password" required></label>
+        <button class="btn" id="submit" type="submit">Sign In</button>
+        <p class="status" id="status" role="status" aria-live="polite"></p>
+      </form>
+    </section>
+    <div class="utility">
+      <span>Cove Charters Back Office</span>
+      <a href="admin.html">Bootstrap setup</a>
+    </div>
+  </main>
+  <script>
+    const DEFAULT_API='https://cove-api.jeff-r-winters.workers.dev';
+    const api=()=>localStorage.getItem('cove_api_base')||DEFAULT_API;
+    const next=()=>new URLSearchParams(location.search).get('next')||'admin.html';
+    const sessionToken=()=>localStorage.getItem('cove_session_token')||'';
+    const setStatus=(message,tone='')=>{status.textContent=message;status.className=`status ${tone}`;};
+    async function checkExistingSession(){if(!sessionToken())return;try{const r=await fetch(`${api()}/api/v1/auth/me`,{headers:{Authorization:`Bearer ${sessionToken()}`},cache:'no-store'});if(r.ok){location.href=next();return;}localStorage.removeItem('cove_session_token');}catch{localStorage.removeItem('cove_session_token');}}
+    loginForm.addEventListener('submit',async event=>{event.preventDefault();submit.disabled=true;submit.textContent='Signing in...';setStatus('Checking credentials...');try{const r=await fetch(`${api()}/api/v1/auth/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email.value,password:password.value})});const data=await r.json();if(!r.ok)throw new Error(data.error||'Sign in failed');localStorage.setItem('cove_session_token',data.token);setStatus('Signed in. Opening admin...','good');location.href=next();}catch(error){setStatus(error.message||'Sign in failed','bad');submit.disabled=false;submit.textContent='Sign In';}});
+    checkExistingSession();
+  </script>
+</body>
+</html>
