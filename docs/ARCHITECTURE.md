@@ -26,6 +26,13 @@ The Worker is the API gateway for the platform.
 Current core endpoints:
 
 - `GET /api/v1/health`
+- `POST /api/v1/auth/login`
+- `POST /api/v1/auth/logout`
+- `GET /api/v1/auth/me`
+- `GET /api/v1/users`
+- `POST /api/v1/users`
+- `PUT /api/v1/users/{id}`
+- `DELETE /api/v1/users/{id}`
 - `GET /api/v1/settings`
 - `PUT /api/v1/settings`
 - `GET /api/v1/boats`
@@ -57,7 +64,7 @@ Current core endpoints:
 - `GET /api/v1/signing/{token}`
 - `POST /api/v1/signing/{token}`
 
-Public reads can remain public where appropriate. Admin writes require `Authorization: Bearer <ADMIN_TOKEN>`.
+Public reads can remain public where appropriate. Admin writes accept `Authorization: Bearer <session_token>` for signed-in back-office users. The legacy `ADMIN_TOKEN` bearer value remains a bootstrap/fallback path for creating the first user and emergency access.
 
 ## Database
 

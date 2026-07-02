@@ -18,7 +18,7 @@ The active Worker file is:
 workers/cove-api-v3-worker.js
 ```
 
-The current API version is `0.3.40` after adding captain-facing availability management and splitting Admin Bookings into List and Calendar views.
+The current API version is `0.3.41` after adding the first real back-office user/session management foundation.
 
 ## Working End To End
 
@@ -36,7 +36,11 @@ The current API version is `0.3.40` after adding captain-facing availability man
 
 - `ADMIN_TOKEN` is configured in Cloudflare Worker secrets.
 - `/api/v1/health` returns `adminAuth: true` when the secret exists.
-- The admin page stores the entered token in browser local storage and sends it as a bearer token for protected writes.
+- `/api/v1/health` returns `userAuth: true` when the deployed Worker supports user/session auth.
+- Back-office users can sign in through `POST /api/v1/auth/login`; sessions are stored as hashed tokens in `admin_sessions`.
+- Protected admin writes now accept either a signed-in user session bearer token or the legacy bootstrap `ADMIN_TOKEN` bearer token.
+- The admin page has a Users tab for creating/editing/deactivating back-office users. Passwords are required for new users and optional when editing existing users.
+- Customer booking/signing remains token-based and does not require customer accounts for MVP.
 
 ### Media Slice
 

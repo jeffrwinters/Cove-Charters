@@ -7,8 +7,11 @@ export default {
 
     try {
       if (request.method === 'GET' && (path === '/health' || path === '/api/v1/health')) return await health(env, cors);
+      if (path === '/api/v1/auth/login') return await authLogin(request, env, cors);
+      if (path === '/api/v1/auth/logout') return await authLogout(request, env, cors);
+      if (path === '/api/v1/auth/me') return await authMe(request, env, cors);
       if (request.method === 'POST' && path === '/api/v1/admin/import-seed') {
-        const auth = requireAdmin(request, env);
+        const auth = await requireAdmin(request, env);
         if (auth) return json(auth.body, auth.status, cors);
         return await importSeed(env, cors);
       }
@@ -23,6 +26,8 @@ export default {
       if (path.startsWith('/api/v1/captains/')) return await captainById(request, env, cors, path.split('/').pop());
       if (path === '/api/v1/customers') return await customers(request, env, cors);
       if (path.startsWith('/api/v1/customers/')) return await customerById(request, env, cors, path.split('/').pop());
+      if (path === '/api/v1/users') return await adminUsers(request, env, cors);
+      if (path.startsWith('/api/v1/users/')) return await adminUserById(request, env, cors, path.split('/').pop());
       if (path === '/api/v1/availability') return await availability(request, env, cors);
       if (path.startsWith('/api/v1/availability/')) return await availabilityById(request, env, cors, path.split('/').pop());
       if (path === '/api/v1/bookings') return await bookings(request, env, cors, ctx);
@@ -54,7 +59,107 @@ async function health(env, cors) {
   requireDb(env);
   const result = await env.DB.prepare('SELECT 1 AS ok').first();
   const resendConfigured = Boolean(env.RESEND_API_KEY && env.BOOKING_NOTIFY_FROM);
-  return json({ ok: true, service: 'cove-api', version: '0.3.40', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
+  return json({ ok: true, service: 'cove-api', version: '0.3.41', d1: result?.ok === 1, adminAuth: Boolean(env.ADMIN_TOKEN), userAuth: true, bookingEmail: Boolean(resendConfigured && env.BOOKING_NOTIFY_TO), customerEmail: resendConfigured, captainEmail: resendConfigured, emailProvider: resendConfigured ? 'resend' : null }, 200, cors);
+}
+
+async function authLogin(request, env, cors) {
+  requireDb(env);
+  if (request.method !== 'POST') return json({ error: 'POST required' }, 405, cors);
+  const body = await request.json();
+  const email = normalizeEmail(body.email);
+  const password = String(body.password || '');
+  if (!email || !password) return json({ error: 'Email and password are required' }, 400, cors);
+  const row = await env.DB.prepare('SELECT * FROM admin_users WHERE email = ?').bind(email).first();
+  if (!row || row.status !== 'active' || !row.password_hash || !await verifyPassword(password, row)) {
+    return json({ error: 'Invalid email or password' }, 401, cors);
+  }
+  const token = randomToken();
+  const tokenHash = await hashToken(token);
+  const sessionId = `session_${crypto.randomUUID()}`;
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  await env.DB.prepare(`
+    INSERT INTO admin_sessions (id, user_id, token_hash, expires_at, last_seen_at)
+    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+  `).bind(sessionId, row.id, tokenHash, expiresAt).run();
+  await env.DB.prepare('UPDATE admin_users SET last_login_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?').bind(row.id).run();
+  return json({ ok: true, token, expiresAt, user: outAdminUser({ ...row, last_login_at: new Date().toISOString() }) }, 200, cors);
+}
+
+async function authLogout(request, env, cors) {
+  requireDb(env);
+  if (request.method !== 'POST') return json({ error: 'POST required' }, 405, cors);
+  const token = bearerToken(request);
+  if (token) {
+    await env.DB.prepare('UPDATE admin_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE token_hash = ? AND revoked_at IS NULL').bind(await hashToken(token)).run();
+  }
+  return json({ ok: true }, 200, cors);
+}
+
+async function authMe(request, env, cors) {
+  requireDb(env);
+  if (request.method !== 'GET') return json({ error: 'GET required' }, 405, cors);
+  const legacy = await hasLegacyAdminToken(request, env);
+  if (legacy) return json({ ok: true, authType: 'bootstrap', user: { name: 'Bootstrap Admin', role: 'admin', status: 'active' } }, 200, cors);
+  const session = await sessionUser(request, env);
+  if (!session) return json({ error: 'Not signed in' }, 401, cors);
+  return json({ ok: true, authType: 'user', user: outAdminUser(session) }, 200, cors);
+}
+
+async function adminUsers(request, env, cors) {
+  requireDb(env);
+  const auth = await requireAdmin(request, env);
+  if (auth) return json(auth.body, auth.status, cors);
+  if (request.method === 'GET') {
+    const rows = await env.DB.prepare('SELECT * FROM admin_users ORDER BY status ASC, name ASC, email ASC').all();
+    return json((rows.results || []).map(outAdminUser), 200, cors);
+  }
+  if (request.method === 'POST') {
+    const body = await request.json();
+    let user;
+    try {
+      user = await userPayload(body, { requirePassword: true });
+    } catch (error) {
+      return json({ error: error.message || 'Invalid user' }, 400, cors);
+    }
+    const id = body.id || `user_${crypto.randomUUID()}`;
+    await env.DB.prepare(`
+      INSERT INTO admin_users (id, name, email, role, status, password_hash, password_salt, password_iterations)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(id, user.name, user.email, user.role, user.status, user.passwordHash, user.passwordSalt, user.passwordIterations).run();
+    const row = await env.DB.prepare('SELECT * FROM admin_users WHERE id = ?').bind(id).first();
+    return json({ ok: true, id, user: outAdminUser(row) }, 201, cors);
+  }
+  return json({ error: 'GET or POST required' }, 405, cors);
+}
+
+async function adminUserById(request, env, cors, id) {
+  requireDb(env);
+  const auth = await requireAdmin(request, env);
+  if (auth) return json(auth.body, auth.status, cors);
+  const current = await env.DB.prepare('SELECT * FROM admin_users WHERE id = ?').bind(id).first();
+  if (!current) return json({ error: 'User not found' }, 404, cors);
+  if (request.method === 'PUT') {
+    const body = await request.json();
+    let user;
+    try {
+      user = await userPayload(body, { current, requirePassword: false });
+    } catch (error) {
+      return json({ error: error.message || 'Invalid user' }, 400, cors);
+    }
+    await env.DB.prepare(`
+      UPDATE admin_users
+      SET name = ?, email = ?, role = ?, status = ?, password_hash = ?, password_salt = ?, password_iterations = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).bind(user.name, user.email, user.role, user.status, user.passwordHash, user.passwordSalt, user.passwordIterations, id).run();
+    const row = await env.DB.prepare('SELECT * FROM admin_users WHERE id = ?').bind(id).first();
+    return json({ ok: true, user: outAdminUser(row) }, 200, cors);
+  }
+  if (request.method === 'DELETE') {
+    await env.DB.prepare('UPDATE admin_users SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').bind('inactive', id).run();
+    await env.DB.prepare('UPDATE admin_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE user_id = ? AND revoked_at IS NULL').bind(id).run();
+    return json({ ok: true, id, status: 'inactive' }, 200, cors);
+  }
+  return json({ error: 'PUT or DELETE required' }, 405, cors);
 }
 
 async function settings(request, env, cors) {
@@ -64,7 +169,7 @@ async function settings(request, env, cors) {
     return json(rows.results || [], 200, cors);
   }
   if (request.method === 'PUT') {
-    const auth = requireAdmin(request, env);
+    const auth = await requireAdmin(request, env);
     if (auth) return json(auth.body, auth.status, cors);
     const body = await request.json();
     await env.DB.prepare('UPDATE settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?').bind(String(body.value), body.key).run();
@@ -97,7 +202,7 @@ async function boats(request, env, cors) {
     return json(boatsWithCaptains.map(outBoat), 200, cors);
   }
   if (request.method === 'POST') {
-    const auth = requireAdmin(request, env);
+    const auth = await requireAdmin(request, env);
     if (auth) return json(auth.body, auth.status, cors);
     const boat = await request.json();
     const id = boat.id || `boat_${crypto.randomUUID()}`;
@@ -110,7 +215,7 @@ async function boats(request, env, cors) {
 async function boatOrder(request, env, cors) {
   requireDb(env);
   if (request.method !== 'PUT') return json({ error: 'PUT required' }, 405, cors);
-  const auth = requireAdmin(request, env);
+  const auth = await requireAdmin(request, env);
   if (auth) return json(auth.body, auth.status, cors);
   const body = await request.json();
   const boatIds = Array.isArray(body.boatIds) ? body.boatIds : [];
@@ -144,14 +249,14 @@ async function boatById(request, env, cors, id) {
     return json(outBoat(boatWithCaptains), 200, cors);
   }
   if (request.method === 'PUT') {
-    const auth = requireAdmin(request, env);
+    const auth = await requireAdmin(request, env);
     if (auth) return json(auth.body, auth.status, cors);
     const boat = await request.json();
     await upsertBoat(env, { ...boat, id });
     return json({ ok: true, id }, 200, cors);
   }
   if (request.method === 'DELETE') {
-    const auth = requireAdmin(request, env);
+    const auth = await requireAdmin(request, env);
     if (auth) return json(auth.body, auth.status, cors);
     await env.DB.prepare('DELETE FROM boats WHERE id = ?').bind(id).run();
     return json({ ok: true, id }, 200, cors);
@@ -294,7 +399,7 @@ async function owners(request, env, cors) {
     return json((rows.results || []).map(outOwner), 200, cors);
   }
   if (request.method === 'POST') {
-    const auth = requireAdmin(request, env);
+    const auth = await requireAdmin(request, env);
     if (auth) return json(auth.body, auth.status, cors);
     const owner = await request.json();
     const id = owner.id || `owner_${crypto.randomUUID()}`;
@@ -316,14 +421,14 @@ async function ownerById(request, env, cors, id) {
     return row ? json(outOwner(row), 200, cors) : json({ error: 'Owner not found' }, 404, cors);
   }
   if (request.method === 'PUT') {
-    const auth = requireAdmin(request, env);
+    const auth = await requireAdmin(request, env);
     if (auth) return json(auth.body, auth.status, cors);
     const owner = await request.json();
     await upsertOwner(env, { ...owner, id });
     return json({ ok: true, id }, 200, cors);
   }
   if (request.method === 'DELETE') {
-    const auth = requireAdmin(request, env);
+    const auth = await requireAdmin(request, env);
     if (auth) return json(auth.body, auth.status, cors);
     await env.DB.prepare('UPDATE boats SET owner_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE owner_id = ?').bind(id).run();
     await env.DB.prepare('DELETE FROM owners WHERE id = ?').bind(id).run();
@@ -339,7 +444,7 @@ async function ownerBoats(request, env, cors, ownerId) {
     return json((rows.results || []).map(outBoat), 200, cors);
   }
   if (request.method === 'PUT') {
-    const auth = requireAdmin(request, env);
+    const auth = await requireAdmin(request, env);
     if (auth) return json(auth.body, auth.status, cors);
     const body = await request.json();
     const boatIds = unique(Array.isArray(body.boatIds) ? body.boatIds.map(String) : []);
@@ -393,7 +498,7 @@ async function captains(request, env, cors) {
     return json((rows.results || []).map(outCaptain), 200, cors);
   }
   if (request.method === 'POST') {
-    const auth = requireAdmin(request, env);
+    const auth = await requireAdmin(request, env);
     if (auth) return json(auth.body, auth.status, cors);
     const captain = await request.json();
     const id = captain.id || `captain_${crypto.randomUUID()}`;
@@ -415,14 +520,14 @@ async function captainById(request, env, cors, id) {
     return row ? json(outCaptain(row), 200, cors) : json({ error: 'Captain not found' }, 404, cors);
   }
   if (request.method === 'PUT') {
-    const auth = requireAdmin(request, env);
+    const auth = await requireAdmin(request, env);
     if (auth) return json(auth.body, auth.status, cors);
     const captain = await request.json();
     await upsertCaptain(env, { ...captain, id });
     return json({ ok: true, id }, 200, cors);
   }
   if (request.method === 'DELETE') {
-    const auth = requireAdmin(request, env);
+    const auth = await requireAdmin(request, env);
     if (auth) return json(auth.body, auth.status, cors);
     await env.DB.prepare('DELETE FROM boat_captains WHERE captain_id = ?').bind(id).run();
     await env.DB.prepare('DELETE FROM captains WHERE id = ?').bind(id).run();
@@ -444,7 +549,7 @@ async function boatCaptains(request, env, cors, boatId) {
     return json((rows.results || []).map(outCaptain), 200, cors);
   }
   if (request.method === 'PUT') {
-    const auth = requireAdmin(request, env);
+    const auth = await requireAdmin(request, env);
     if (auth) return json(auth.body, auth.status, cors);
     const body = await request.json();
     const captainIds = unique(Array.isArray(body.captainIds) ? body.captainIds.map(String) : []);
@@ -505,7 +610,7 @@ function outCaptain(row) {
 
 async function customers(request, env, cors) {
   requireDb(env);
-  const auth = requireAdmin(request, env);
+  const auth = await requireAdmin(request, env);
   if (auth) return json(auth.body, auth.status, cors);
   if (request.method === 'GET') {
     const rows = await env.DB.prepare(`
@@ -530,7 +635,7 @@ async function customers(request, env, cors) {
 
 async function customerById(request, env, cors, id) {
   requireDb(env);
-  const auth = requireAdmin(request, env);
+  const auth = await requireAdmin(request, env);
   if (auth) return json(auth.body, auth.status, cors);
   if (request.method === 'GET') {
     const row = await customerRow(env, id);
@@ -670,7 +775,7 @@ async function availability(request, env, cors) {
     return json((rows.results || []).map(outAvailability), 200, cors);
   }
   if (request.method === 'POST') {
-    const auth = requireAdmin(request, env);
+    const auth = await requireAdmin(request, env);
     if (auth) return json(auth.body, auth.status, cors);
     const body = await request.json();
     if (!body.entityType && !body.entity_type) return json({ error: 'entityType is required' }, 400, cors);
@@ -691,7 +796,7 @@ async function availabilityById(request, env, cors, id) {
     const row = await env.DB.prepare('SELECT * FROM availability WHERE id = ?').bind(id).first();
     return row ? json(outAvailability(row), 200, cors) : json({ error: 'Availability block not found' }, 404, cors);
   }
-  const auth = requireAdmin(request, env);
+  const auth = await requireAdmin(request, env);
   if (auth) return json(auth.body, auth.status, cors);
   if (request.method === 'PUT') {
     const current = await env.DB.prepare('SELECT * FROM availability WHERE id = ?').bind(id).first();
@@ -805,7 +910,7 @@ async function bookingById(request, env, cors, id) {
     return row ? json((await attachBookingDocuments(env, [outBooking(row)]))[0], 200, cors) : json({ error: 'Booking not found' }, 404, cors);
   }
 
-  const auth = requireAdmin(request, env);
+  const auth = await requireAdmin(request, env);
   if (auth) return json(auth.body, auth.status, cors);
 
   if (request.method === 'PUT') {
@@ -861,7 +966,7 @@ async function bookingById(request, env, cors, id) {
 
 async function bookingDocuments(request, env, cors, bookingId) {
   requireDb(env);
-  const auth = requireAdmin(request, env);
+  const auth = await requireAdmin(request, env);
   if (auth) return json(auth.body, auth.status, cors);
 
   if (request.method === 'GET') {
@@ -929,7 +1034,7 @@ async function bookingDocuments(request, env, cors, bookingId) {
 
 async function bookingSettlement(request, env, cors, bookingId) {
   requireDb(env);
-  const auth = requireAdmin(request, env);
+  const auth = await requireAdmin(request, env);
   if (auth) return json(auth.body, auth.status, cors);
 
   const bookingRow = await env.DB.prepare(bookingSelectSql('WHERE bk.id = ?')).bind(bookingId).first();
@@ -1324,7 +1429,7 @@ async function signingRecord(request, env, cors, token) {
 
 async function sendBookingConfirmation(request, env, cors, id) {
   requireDb(env);
-  const auth = requireAdmin(request, env);
+  const auth = await requireAdmin(request, env);
   if (auth) return json(auth.body, auth.status, cors);
   if (request.method !== 'POST') return json({ error: 'POST required' }, 405, cors);
 
@@ -1356,7 +1461,7 @@ async function sendBookingConfirmation(request, env, cors, id) {
 
 async function sendAgreementPacket(request, env, cors, id) {
   requireDb(env);
-  const auth = requireAdmin(request, env);
+  const auth = await requireAdmin(request, env);
   if (auth) return json(auth.body, auth.status, cors);
   if (request.method !== 'POST') return json({ error: 'POST required' }, 405, cors);
 
@@ -1385,7 +1490,7 @@ async function sendAgreementPacket(request, env, cors, id) {
 
 async function sendCaptainPacket(request, env, cors, id) {
   requireDb(env);
-  const auth = requireAdmin(request, env);
+  const auth = await requireAdmin(request, env);
   if (auth) return json(auth.body, auth.status, cors);
   if (request.method !== 'POST') return json({ error: 'POST required' }, 405, cors);
 
@@ -1412,7 +1517,7 @@ async function sendCaptainPacket(request, env, cors, id) {
 
 async function captainTripLink(request, env, cors, id) {
   requireDb(env);
-  const auth = requireAdmin(request, env);
+  const auth = await requireAdmin(request, env);
   if (auth) return json(auth.body, auth.status, cors);
   if (request.method !== 'POST') return json({ error: 'POST required' }, 405, cors);
 
@@ -1570,7 +1675,7 @@ function captainTripPayload(booking) {
 
 async function sendFinalInvoice(request, env, cors, id) {
   requireDb(env);
-  const auth = requireAdmin(request, env);
+  const auth = await requireAdmin(request, env);
   if (auth) return json(auth.body, auth.status, cors);
   if (request.method !== 'POST') return json({ error: 'POST required' }, 405, cors);
 
@@ -2306,7 +2411,7 @@ async function listMedia(request, env, cors) {
 async function uploadMedia(request, env, cors) {
   if (request.method !== 'POST') return json({ error: 'POST required' }, 405, cors);
   requireDb(env);
-  const auth = requireAdmin(request, env);
+  const auth = await requireAdmin(request, env);
   if (auth) return json(auth.body, auth.status, cors);
   const form = await request.formData();
   const file = form.get('file');
@@ -2351,7 +2456,7 @@ async function mediaById(request, env, cors, id) {
     return row ? json(outMedia(row), 200, cors) : json({ error: 'Media not found' }, 404, cors);
   }
 
-  const auth = requireAdmin(request, env);
+  const auth = await requireAdmin(request, env);
   if (auth) return json(auth.body, auth.status, cors);
 
   if (request.method === 'PUT') {
@@ -2459,12 +2564,121 @@ async function readSeedJson(env) {
   throw new Error(`Could not read seed boats.json: ${lastError}`);
 }
 
-function requireAdmin(request, env) {
-  if (!env.ADMIN_TOKEN) return { status: 503, body: { error: 'ADMIN_TOKEN is not configured for protected write operations' } };
-  const expected = `Bearer ${env.ADMIN_TOKEN}`;
-  if (request.headers.get('Authorization') !== expected) return { status: 401, body: { error: 'Admin authorization required' } };
-  return null;
+async function requireAdmin(request, env) {
+  if (await hasLegacyAdminToken(request, env)) return null;
+  if (await sessionUser(request, env)) return null;
+  return { status: 401, body: { error: 'Admin authorization required' } };
 }
+
+async function hasLegacyAdminToken(request, env) {
+  if (!env.ADMIN_TOKEN) return false;
+  const expected = `Bearer ${env.ADMIN_TOKEN}`;
+  return constantTimeEqual(request.headers.get('Authorization') || '', expected);
+}
+
+function bearerToken(request) {
+  const value = request.headers.get('Authorization') || '';
+  return value.toLowerCase().startsWith('bearer ') ? value.slice(7).trim() : '';
+}
+
+async function sessionUser(request, env) {
+  const token = bearerToken(request);
+  if (!token || env.ADMIN_TOKEN && constantTimeEqual(`Bearer ${token}`, `Bearer ${env.ADMIN_TOKEN}`)) return null;
+  const tokenHash = await hashToken(token);
+  return await env.DB.prepare(`
+    SELECT u.*, s.id AS session_id, s.expires_at
+    FROM admin_sessions s
+    JOIN admin_users u ON u.id = s.user_id
+    WHERE s.token_hash = ? AND s.revoked_at IS NULL AND s.expires_at > ?
+      AND u.status = 'active'
+    LIMIT 1
+  `).bind(tokenHash, new Date().toISOString()).first();
+}
+
+async function userPayload(body, { current = {}, requirePassword = false } = {}) {
+  const name = String(body.name ?? current.name ?? '').trim();
+  const email = normalizeEmail(body.email ?? current.email);
+  const role = cleanRole(body.role ?? current.role ?? 'staff');
+  const status = cleanUserStatus(body.status ?? current.status ?? 'active');
+  if (!name) throw new Error('User name is required');
+  if (!email) throw new Error('User email is required');
+  let passwordHash = current.password_hash || null;
+  let passwordSalt = current.password_salt || null;
+  let passwordIterations = Number(current.password_iterations || 100000);
+  const password = String(body.password || '');
+  if (requirePassword && password.length < 8) throw new Error('Password must be at least 8 characters');
+  if (password) {
+    if (password.length < 8) throw new Error('Password must be at least 8 characters');
+    const hashed = await hashPassword(password);
+    passwordHash = hashed.hash;
+    passwordSalt = hashed.salt;
+    passwordIterations = hashed.iterations;
+  }
+  return { name, email, role, status, passwordHash, passwordSalt, passwordIterations };
+}
+
+function outAdminUser(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    role: row.role || 'staff',
+    status: row.status || 'active',
+    lastLoginAt: row.last_login_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+async function hashPassword(password, salt = randomToken(18), iterations = 100000) {
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: base64UrlToBytes(salt), iterations }, key, 256);
+  return { hash: bytesToBase64Url(new Uint8Array(bits)), salt, iterations };
+}
+
+async function verifyPassword(password, row) {
+  const hashed = await hashPassword(password, row.password_salt, Number(row.password_iterations || 100000));
+  return constantTimeEqual(hashed.hash, row.password_hash || '');
+}
+
+async function hashToken(token) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
+  return bytesToBase64Url(new Uint8Array(digest));
+}
+
+function randomToken(size = 32) {
+  const bytes = new Uint8Array(size);
+  crypto.getRandomValues(bytes);
+  return bytesToBase64Url(bytes);
+}
+
+function bytesToBase64Url(bytes) {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function base64UrlToBytes(value) {
+  const normalized = String(value).replace(/-/g, '+').replace(/_/g, '/');
+  const padded = normalized + '='.repeat((4 - normalized.length % 4) % 4);
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+function constantTimeEqual(a, b) {
+  const left = new TextEncoder().encode(String(a || ''));
+  const right = new TextEncoder().encode(String(b || ''));
+  if (left.length !== right.length) return false;
+  let diff = 0;
+  for (let i = 0; i < left.length; i++) diff |= left[i] ^ right[i];
+  return diff === 0;
+}
+
+function normalizeEmail(value) { return String(value || '').trim().toLowerCase(); }
+function cleanRole(value) { const role = cleanSegment(value || 'staff'); return ['admin', 'staff', 'captain', 'owner'].includes(role) ? role : 'staff'; }
+function cleanUserStatus(value) { const status = cleanSegment(value || 'active'); return ['active', 'inactive', 'invited'].includes(status) ? status : 'active'; }
 
 async function setting(env, key, fallback) {
   const row = await env.DB.prepare('SELECT value, value_type FROM settings WHERE key = ?').bind(key).first();

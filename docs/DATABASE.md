@@ -87,6 +87,29 @@ Important MVP fields:
 - `favorite_captain`
 - `notes`
 
+### admin_users
+
+Back-office user accounts for the admin application.
+
+Important fields:
+
+- `email`
+- `name`
+- `role`: currently `admin`, `staff`, `captain`, or `owner`
+- `status`: currently `active`, `inactive`, or `invited`
+- password hash metadata only; plaintext passwords are never stored
+
+### admin_sessions
+
+Hashed user session tokens for admin access.
+
+Important fields:
+
+- `user_id`
+- `token_hash`
+- `expires_at`
+- `revoked_at`
+
 ### bookings
 
 Customer-facing booking records.
